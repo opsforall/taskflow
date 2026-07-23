@@ -1,26 +1,50 @@
-# Pipeline CI DevSecOps — étapes successives (chaînées par `needs:`)
+# ==============================================================================
+# PIPELINE CI DevSecOps — GitHub Actions
+# ==============================================================================
+# Vocabulaire GitHub Actions :
+#   • workflow = ce fichier entier, déclenché par un événement (`on:`)
+#   • job      = un bloc sous `jobs:` qui tourne sur une machine neuve (« runner »)
+#   • step     = une commande (`run:`) ou une action réutilisable (`uses:`)
+#   • needs:   = dépendance entre jobs → exécution SÉQUENTIELLE et « fail fast »
+#                (si un job échoue, les suivants ne démarrent pas)
 #
-# 1 · Lint         → ESLint + Prettier (backend + frontend) ..... « fail fast » sur le style
-# 2 · Test unit.   → Jest + Supertest / Vitest, couverture ≥ 60% (base MOCKÉE)
-# 3 · Intégration  → API testée contre une VRAIE PostgreSQL (service éphémère)
-# 4 · Secrets      → Gitleaks (secrets committés dans l'historique)
-# 5 · SCA          → Trivy fs (vulnérabilités des DÉPENDANCES)
-# 6 · SAST         → Semgrep (vulnérabilités du CODE applicatif)
-# 7 · Image        → build Docker → Trivy image → push GHCR (push main uniquement)
-# 8 · E2E          → Playwright : parcours utilisateur sur la stack DÉPLOYÉE
+# Philosophie DevSecOps « shift-left » : intégrer la qualité et la SÉCURITÉ le
+# plus TÔT possible et de façon AUTOMATIQUE, à chaque push/PR, plutôt qu'à la fin.
+# Chaque étape est une « porte » (gate) : elle bloque la suite si elle échoue.
 #
-# Plus un test est « proche du produit fini », plus il est tard : unitaire →
-# intégration → build → E2E. SCA (étape 5) ≠ SAST (étape 6) : la SCA analyse les
-# bibliothèques tierces, le SAST analyse ton propre code.
+# Les 8 étapes, dans l'ordre :
+#   1 · Lint        → ESLint + Prettier (back + front) ..... « fail fast » sur le style
+#   2 · Test unit.  → Jest + Supertest / Vitest, couverture ≥ 60% (base MOCKÉE)
+#   3 · Intégration → API testée contre une VRAIE PostgreSQL (service éphémère)
+#   4 · Secrets     → Gitleaks (secrets committés dans l'historique git)
+#   5 · SCA         → Trivy fs : vulnérabilités des DÉPENDANCES tierces
+#   6 · SAST        → Semgrep : vulnérabilités de TON PROPRE code
+#   7 · Image       → build Docker → scan Trivy → push GHCR (push main uniquement)
+#   8 · E2E         → Playwright : parcours utilisateur sur la stack DÉPLOYÉE
+#
+# Deux repères pédagogiques :
+#   • Pyramide des tests projetée sur le temps : plus un test est « proche du
+#     produit fini » (donc coûteux), plus il est tard → unit → intégration →
+#     build → E2E.
+#   • SCA ≠ SAST : la SCA (Software Composition Analysis) audite les BIBLIOTHÈQUES
+#     tierces que tu importes ; le SAST (Static Application Security Testing)
+#     audite le CODE que tu écris. Deux familles de failles distinctes.
+# ------------------------------------------------------------------------------
 
 name: CI
 
+# Déclencheurs : la pipeline tourne à chaque push sur main ET à chaque Pull
+# Request ciblant main. Sur une PR, on valide AVANT de fusionner ; l'étape 7
+# ne poussera l'image que sur un push réel (voir `if: github.event_name`).
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
 
+# Principe de moindre privilège appliqué au jeton GITHUB_TOKEN : par défaut la
+# pipeline n'a que la lecture du dépôt. Les jobs qui ont besoin de plus (ex.
+# l'étape 7 qui pousse des images) demandent explicitement leurs droits.
 permissions:
   contents: read
 

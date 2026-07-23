@@ -1,4 +1,13 @@
-# Stack complète en local : PostgreSQL + API + Front
+# ==============================================================================
+# docker-compose.yml — orchestration LOCALE de toute la stack
+# ==============================================================================
+# Docker Compose démarre plusieurs conteneurs ensemble et les relie sur un même
+# réseau privé. C'est l'équivalent « poste de dev » de ce que Kubernetes fait en
+# production : ici on lance en une commande la base, l'API et le front.
+#
+# Compose crée automatiquement un réseau par défaut où chaque service est
+# joignable par son NOM (db, backend, frontend) via un DNS interne — c'est
+# pourquoi le backend utilise DB_HOST=db et non une adresse IP.
 #
 # Démarrage :        docker compose up --build
 # Changer la couleur du front (démo variable d'environnement) :
@@ -6,48 +15,65 @@
 #   $env:APP_COLOR="red"; docker compose up --build  (PowerShell)
 #
 # Front : http://localhost:8080  —  API : http://localhost:3000/api/health
+# ------------------------------------------------------------------------------
 
 services:
+  # --- Base de données PostgreSQL --------------------------------------------
   db:
-    image: postgres:16-alpine
+    image: postgres:16-alpine # image officielle prête à l'emploi (pas de build)
     environment:
       POSTGRES_USER: taskflow
-      POSTGRES_PASSWORD: taskflow # dev uniquement — en k8s, ce mot de passe vient d'un Secret
+      # ⚠️ Mot de passe en clair : ACCEPTABLE en dev local uniquement.
+      # En Kubernetes, il provient d'un Secret, jamais du fichier de manifeste.
+      POSTGRES_PASSWORD: taskflow
       POSTGRES_DB: taskflow
     volumes:
+      # Volume nommé : les données SURVIVENT à la suppression du conteneur.
+      # Sans lui, la base repartirait vide à chaque redémarrage.
       - db-data:/var/lib/postgresql/data
     healthcheck:
+      # Compose teste régulièrement si la base accepte les connexions.
+      # Combiné à depends_on (voir backend), cela garantit l'ordre de démarrage.
       test: ["CMD-SHELL", "pg_isready -U taskflow -d taskflow"]
       interval: 5s
       timeout: 3s
       retries: 10
 
+  # --- API backend (Node/Express) --------------------------------------------
   backend:
-    build: ./backend
+    build: ./backend # construit l'image à partir de backend/Dockerfile
     environment:
-      DB_HOST: db
+      DB_HOST: db # ← nom du service = nom DNS sur le réseau Compose
       DB_PORT: "5432"
       DB_USER: taskflow
       DB_PASSWORD: taskflow
       DB_NAME: taskflow
-      JWT_SECRET: dev-secret-change-me # dev uniquement — en k8s, vient d'un Secret
+      JWT_SECRET: dev-secret-change-me # dev uniquement — en k8s vient d'un Secret
     ports:
+      # "hôte:conteneur" — publie le port 3000 du conteneur sur localhost:3000.
       - "3000:3000"
     depends_on:
       db:
+        # N'attend pas seulement que le conteneur db démarre, mais qu'il soit
+        # HEALTHY (healthcheck ci-dessus vert) avant de lancer le backend.
         condition: service_healthy
 
+  # --- Frontend (React buildé, servi par nginx) ------------------------------
   frontend:
     build: ./frontend
     environment:
-      # ← LA variable de démo : blue, red, yellow, green, purple, teal
+      # ← LA variable de démo. Syntaxe ${VAR:-défaut} : prend la valeur de la
+      # variable d'environnement APP_COLOR de ton shell si elle existe, sinon
+      # « blue ». Couleurs disponibles : blue, red, yellow, green, purple, teal.
       APP_COLOR: ${APP_COLOR:-blue}
       # URL interne du backend, utilisée par le proxy nginx pour /api
+      # (résolue via le DNS du réseau Compose — d'où « backend » et non une IP).
       BACKEND_URL: http://backend:3000
     ports:
       - "8080:8080"
     depends_on:
-      - backend
+      - backend # démarre après le backend (ordre simple, sans condition de santé)
 
+# Déclaration du volume nommé utilisé par la base (persistance des données).
 volumes:
   db-data:
