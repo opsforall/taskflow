@@ -87,10 +87,17 @@ jobs:
           # Gitleaks analyse tout l'historique git, pas seulement le dernier commit
           fetch-depth: 0
 
-      - name: Scan Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+      # On utilise le binaire Gitleaks directement (open-source, gratuit) plutôt
+      # que l'action gitleaks/gitleaks-action, qui exige une licence payante sur
+      # les dépôts d'organisation. Le binaire, lui, est libre pour tous.
+      # Il analyse tout l'historique git et sort en code 1 si un secret est trouvé.
+      - name: Scan Gitleaks (CLI open-source, sans licence)
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          ./gitleaks git . --redact --verbose
 
   docker:
     name: Image ${{ matrix.service }} · build + Trivy + push
