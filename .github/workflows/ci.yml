@@ -132,7 +132,7 @@ jobs:
 
       # Build local (load: true) : l'image n'est PAS poussée avant d'être scannée
       - name: Build de l'image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./${{ matrix.service }}
           load: true
@@ -160,7 +160,7 @@ jobs:
       # Push uniquement sur main (le build est en cache, cette étape est instantanée)
       - name: Push vers GHCR
         if: github.event_name == 'push'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./${{ matrix.service }}
           push: true
