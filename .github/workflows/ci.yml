@@ -1,14 +1,17 @@
 # Pipeline CI DevSecOps — étapes successives (chaînées par `needs:`)
 #
-# 1 · Lint      → ESLint + Prettier (backend + frontend) ....... « fail fast » sur le style
-# 2 · Test      → Jest + Supertest / Vitest, couverture ≥ 60%
-# 3 · Secrets   → Gitleaks (secrets committés dans l'historique)
-# 4 · SCA       → Trivy fs (vulnérabilités des DÉPENDANCES)
-# 5 · SAST      → Semgrep (vulnérabilités du CODE applicatif)
-# 6 · Image     → build Docker → Trivy image → push GHCR (push main uniquement)
+# 1 · Lint         → ESLint + Prettier (backend + frontend) ..... « fail fast » sur le style
+# 2 · Test unit.   → Jest + Supertest / Vitest, couverture ≥ 60% (base MOCKÉE)
+# 3 · Intégration  → API testée contre une VRAIE PostgreSQL (service éphémère)
+# 4 · Secrets      → Gitleaks (secrets committés dans l'historique)
+# 5 · SCA          → Trivy fs (vulnérabilités des DÉPENDANCES)
+# 6 · SAST         → Semgrep (vulnérabilités du CODE applicatif)
+# 7 · Image        → build Docker → Trivy image → push GHCR (push main uniquement)
+# 8 · E2E          → Playwright : parcours utilisateur sur la stack DÉPLOYÉE
 #
-# SCA (étape 4) ≠ SAST (étape 5) : la SCA analyse les bibliothèques tierces
-# (ce que tu importes), le SAST analyse ton propre code source.
+# Plus un test est « proche du produit fini », plus il est tard : unitaire →
+# intégration → build → E2E. SCA (étape 5) ≠ SAST (étape 6) : la SCA analyse les
+# bibliothèques tierces, le SAST analyse ton propre code.
 
 name: CI
 
@@ -54,7 +57,7 @@ jobs:
           npm run format:check
 
   # ─────────────────────────────────────────────────────────────
-  # 2 · TESTS UNITAIRES + couverture (seuil 60% défini côté projet)
+  # 2 · TESTS UNITAIRES + couverture (base de données MOCKÉE)
   # ─────────────────────────────────────────────────────────────
   test:
     name: 2 · Tests unitaires + couverture
@@ -84,11 +87,57 @@ jobs:
           npm run test:coverage
 
   # ─────────────────────────────────────────────────────────────
-  # 3 · SECRET SCANNING — binaire Gitleaks (open-source, sans licence)
+  # 3 · TESTS D'INTÉGRATION — API contre une VRAIE PostgreSQL
+  #     (service éphémère fourni par GitHub Actions)
+  # ─────────────────────────────────────────────────────────────
+  integration:
+    name: 3 · Tests d'intégration (API + PostgreSQL)
+    needs: test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: taskflow
+          POSTGRES_PASSWORD: taskflow
+          POSTGRES_DB: taskflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U taskflow -d taskflow"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+
+      - name: Backend — tests d'intégration (vraie base)
+        working-directory: backend
+        env:
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          DB_USER: taskflow
+          DB_PASSWORD: taskflow
+          DB_NAME: taskflow
+          JWT_SECRET: test-secret-integration
+        run: |
+          npm ci
+          npm run test:integration
+
+  # ─────────────────────────────────────────────────────────────
+  # 4 · SECRET SCANNING — binaire Gitleaks (open-source, sans licence)
   # ─────────────────────────────────────────────────────────────
   secrets:
-    name: 3 · Secret scanning (Gitleaks)
-    needs: test
+    name: 4 · Secret scanning (Gitleaks)
+    needs: integration
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (historique complet)
@@ -108,11 +157,11 @@ jobs:
           ./gitleaks git . --redact --verbose
 
   # ─────────────────────────────────────────────────────────────
-  # 4 · SCA — Trivy en mode filesystem : vulnérabilités des dépendances
+  # 5 · SCA — Trivy en mode filesystem : vulnérabilités des dépendances
   #     (lit les package-lock.json, aucune install nécessaire)
   # ─────────────────────────────────────────────────────────────
   sca:
-    name: 4 · SCA — dépendances (Trivy fs)
+    name: 5 · SCA — dépendances (Trivy fs)
     needs: secrets
     runs-on: ubuntu-latest
     steps:
@@ -131,11 +180,11 @@ jobs:
           format: table
 
   # ─────────────────────────────────────────────────────────────
-  # 5 · SAST — Semgrep sur le CODE applicatif (backend + frontend)
+  # 6 · SAST — Semgrep sur le CODE applicatif (backend + frontend)
   #     Règles lisibles en YAML ; on cible src/ (pas l'IaC k8s).
   # ─────────────────────────────────────────────────────────────
   sast:
-    name: 5 · SAST — code (Semgrep)
+    name: 6 · SAST — code (Semgrep)
     needs: sca
     runs-on: ubuntu-latest
     steps:
@@ -152,10 +201,10 @@ jobs:
               backend/src backend/tests frontend/src
 
   # ─────────────────────────────────────────────────────────────
-  # 6 · IMAGE — build → Trivy image (OS + deps) → push GHCR
+  # 7 · IMAGE — build → Trivy image (OS + deps) → push GHCR
   # ─────────────────────────────────────────────────────────────
   image:
-    name: 6 · Image ${{ matrix.service }} (build + Trivy)
+    name: 7 · Image ${{ matrix.service }} (build + Trivy)
     needs: sast
     runs-on: ubuntu-latest
     permissions:
@@ -208,3 +257,54 @@ jobs:
           tags: |
             ${{ env.IMAGE }}:${{ github.sha }}
             ${{ env.IMAGE }}:latest
+
+  # ─────────────────────────────────────────────────────────────
+  # 8 · E2E — Playwright contre la stack complète DÉPLOYÉE via compose
+  # ─────────────────────────────────────────────────────────────
+  e2e:
+    name: 8 · Tests d'acceptance E2E (Playwright)
+    needs: image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Démarrer la stack (docker compose)
+        run: docker compose up -d --build
+
+      - name: Attendre que l'application soit prête
+        run: |
+          for i in $(seq 1 40); do
+            back=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/health/ready || true)
+            front=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/ || true)
+            if [ "$back" = "200" ] && [ "$front" = "200" ]; then echo "Stack prête"; exit 0; fi
+            echo "tentative $i/40 — backend=$back frontend=$front"; sleep 3
+          done
+          echo "La stack n'est pas prête à temps"; docker compose logs; exit 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Installer Playwright + navigateur Chromium
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Tests E2E (Playwright)
+        working-directory: e2e
+        env:
+          E2E_BASE_URL: http://localhost:8080
+        run: npm test
+
+      - name: Logs de la stack (si échec)
+        if: failure()
+        run: docker compose logs
+
+      - name: Arrêter la stack
+        if: always()
+        run: docker compose down -v

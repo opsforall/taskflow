@@ -22,8 +22,8 @@ module.exports = [
     }
   },
   {
-    // Les fichiers de test disposent en plus des globales Jest
-    files: ['tests/**/*.js'],
+    // Les fichiers de test (unitaires ET intégration) disposent des globales Jest
+    files: ['tests/**/*.js', 'tests-integration/**/*.js'],
     languageOptions: {
       globals: { ...globals.node, ...globals.jest }
     }

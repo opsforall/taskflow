@@ -8,12 +8,17 @@
     "dev": "node --watch src/index.js",
     "test": "jest --runInBand",
     "test:coverage": "jest --runInBand --coverage",
+    "test:integration": "jest --runInBand --config jest.integration.config.js",
     "lint": "eslint . --max-warnings=0",
-    "format": "prettier --write \"src/**/*.js\" \"tests/**/*.js\"",
-    "format:check": "prettier --check \"src/**/*.js\" \"tests/**/*.js\""
+    "format": "prettier --write \"src/**/*.js\" \"tests/**/*.js\" \"tests-integration/**/*.js\"",
+    "format:check": "prettier --check \"src/**/*.js\" \"tests/**/*.js\" \"tests-integration/**/*.js\""
   },
   "jest": {
     "testEnvironment": "node",
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "<rootDir>/tests-integration/"
+    ],
     "collectCoverageFrom": [
       "src/**/*.js",
       "!src/index.js",
