@@ -12,7 +12,7 @@ RUN npm run build
 # Étape 2 : serveur nginx NON-ROOT (image "unprivileged", uid 101)
 # — écoute sur 8080 (pas besoin de privilèges pour un port > 1024)
 # ---------------------------------------------------------------
-FROM nginxinc/nginx-unprivileged:1.27-alpine
+FROM nginxinc/nginx-unprivileged:1.31-alpine
 
 # ← Valeur PAR DÉFAUT de la couleur du thème, surchargeable à l'exécution :
 #    docker run -e APP_COLOR=red ...        (Docker)
