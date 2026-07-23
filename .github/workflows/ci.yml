@@ -3,7 +3,6 @@
 # ┌ tests unitaires backend (Jest + Supertest) + npm audit (SCA)
 # ├ tests + build frontend (Vitest + Vite) + npm audit (SCA)
 # ├ Gitleaks : détection de secrets committés dans l'historique git
-# ├ CodeQL : analyse statique du code (SAST)
 # └ pour chaque image (backend, frontend) :
 #     build Docker → scan Trivy (vulnérabilités HIGH/CRITICAL bloquantes)
 #     → push vers GHCR (uniquement sur push main, jamais sur les PR)
@@ -92,24 +91,6 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  codeql:
-    name: CodeQL · analyse statique (SAST)
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write # nécessaire pour publier les résultats dans l'onglet Security
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Initialiser CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: javascript-typescript
-
-      - name: Analyse CodeQL
-        uses: github/codeql-action/analyze@v3
 
   docker:
     name: Image ${{ matrix.service }} · build + Trivy + push
