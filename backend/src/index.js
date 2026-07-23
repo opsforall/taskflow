@@ -4,7 +4,9 @@ const config = require('./config');
 
 // Fail-fast : refuse de démarrer en production avec le secret JWT par défaut
 if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
-  console.error('FATAL : JWT_SECRET doit être défini en production (Secret Kubernetes / variable d\'environnement)');
+  console.error(
+    "FATAL : JWT_SECRET doit être défini en production (Secret Kubernetes / variable d'environnement)"
+  );
   process.exit(1);
 }
 
@@ -17,7 +19,9 @@ async function waitForDatabase(attempts = 15, delayMs = 3000) {
       return;
     } catch (err) {
       if (attempt === attempts) throw err;
-      console.log(`Base indisponible (tentative ${attempt}/${attempts}) : ${err.message} — nouvel essai dans ${delayMs / 1000}s`);
+      console.log(
+        `Base indisponible (tentative ${attempt}/${attempts}) : ${err.message} — nouvel essai dans ${delayMs / 1000}s`
+      );
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }

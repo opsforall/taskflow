@@ -7,12 +7,42 @@
 //   3. 'blue' — valeur par défaut
 
 export const THEMES = {
-  blue: { primary: '#2563eb', primaryDark: '#1e40af', primarySoft: '#dbeafe', ring: 'rgba(37, 99, 235, 0.3)' },
-  red: { primary: '#dc2626', primaryDark: '#991b1b', primarySoft: '#fee2e2', ring: 'rgba(220, 38, 38, 0.3)' },
-  yellow: { primary: '#d97706', primaryDark: '#92400e', primarySoft: '#fef3c7', ring: 'rgba(217, 119, 6, 0.3)' },
-  green: { primary: '#16a34a', primaryDark: '#166534', primarySoft: '#dcfce7', ring: 'rgba(22, 163, 74, 0.3)' },
-  purple: { primary: '#7c3aed', primaryDark: '#5b21b6', primarySoft: '#ede9fe', ring: 'rgba(124, 58, 237, 0.3)' },
-  teal: { primary: '#0d9488', primaryDark: '#115e59', primarySoft: '#ccfbf1', ring: 'rgba(13, 148, 136, 0.3)' }
+  blue: {
+    primary: '#2563eb',
+    primaryDark: '#1e40af',
+    primarySoft: '#dbeafe',
+    ring: 'rgba(37, 99, 235, 0.3)'
+  },
+  red: {
+    primary: '#dc2626',
+    primaryDark: '#991b1b',
+    primarySoft: '#fee2e2',
+    ring: 'rgba(220, 38, 38, 0.3)'
+  },
+  yellow: {
+    primary: '#d97706',
+    primaryDark: '#92400e',
+    primarySoft: '#fef3c7',
+    ring: 'rgba(217, 119, 6, 0.3)'
+  },
+  green: {
+    primary: '#16a34a',
+    primaryDark: '#166534',
+    primarySoft: '#dcfce7',
+    ring: 'rgba(22, 163, 74, 0.3)'
+  },
+  purple: {
+    primary: '#7c3aed',
+    primaryDark: '#5b21b6',
+    primarySoft: '#ede9fe',
+    ring: 'rgba(124, 58, 237, 0.3)'
+  },
+  teal: {
+    primary: '#0d9488',
+    primaryDark: '#115e59',
+    primarySoft: '#ccfbf1',
+    ring: 'rgba(13, 148, 136, 0.3)'
+  }
 };
 
 export const DEFAULT_THEME = 'blue';
@@ -20,7 +50,9 @@ export const DEFAULT_THEME = 'blue';
 // Normalise une valeur brute ('RED ', 'Blue'…) vers un nom de thème connu,
 // avec repli sur le thème par défaut si la couleur n'existe pas.
 export function resolveTheme(raw) {
-  const name = String(raw || '').trim().toLowerCase();
+  const name = String(raw || '')
+    .trim()
+    .toLowerCase();
   return Object.hasOwn(THEMES, name) ? name : DEFAULT_THEME;
 }
 

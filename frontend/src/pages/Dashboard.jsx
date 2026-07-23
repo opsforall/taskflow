@@ -178,9 +178,7 @@ export default function Dashboard() {
         )}
       </main>
 
-      {modal && (
-        <TaskModal initial={modal.task} onSave={saveTask} onClose={() => setModal(null)} />
-      )}
+      {modal && <TaskModal initial={modal.task} onSave={saveTask} onClose={() => setModal(null)} />}
     </div>
   );
 }

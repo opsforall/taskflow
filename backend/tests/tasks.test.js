@@ -37,15 +37,13 @@ describe('Protection JWT', () => {
   });
 
   it('rejette un token invalide (401)', async () => {
-    const res = await request(app)
-      .get('/api/tasks')
-      .set('Authorization', 'Bearer token-bidon');
+    const res = await request(app).get('/api/tasks').set('Authorization', 'Bearer token-bidon');
     expect(res.status).toBe(401);
   });
 });
 
 describe('GET /api/tasks', () => {
-  it('renvoie les tâches de l\'utilisateur connecté', async () => {
+  it("renvoie les tâches de l'utilisateur connecté", async () => {
     db.query.mockResolvedValueOnce({ rows: [TASK_ROW] });
 
     const res = await auth(request(app).get('/api/tasks'));
@@ -103,7 +101,7 @@ describe('PUT /api/tasks/:id', () => {
     expect(res.body.task.status).toBe('done');
   });
 
-  it('renvoie 404 pour une tâche qui n\'appartient pas à l\'utilisateur', async () => {
+  it("renvoie 404 pour une tâche qui n'appartient pas à l'utilisateur", async () => {
     db.query.mockResolvedValueOnce({ rows: [] });
 
     const res = await auth(request(app).put('/api/tasks/999')).send({ status: 'done' });
@@ -130,7 +128,7 @@ describe('DELETE /api/tasks/:id', () => {
     expect(res.status).toBe(204);
   });
 
-  it('renvoie 404 si la tâche n\'existe pas', async () => {
+  it("renvoie 404 si la tâche n'existe pas", async () => {
     db.query.mockResolvedValueOnce({ rows: [] });
 
     const res = await auth(request(app).delete('/api/tasks/999'));

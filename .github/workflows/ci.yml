@@ -1,11 +1,14 @@
-# Pipeline CI DevSecOps
+# Pipeline CI DevSecOps — étapes successives (chaînées par `needs:`)
 #
-# ┌ tests unitaires backend (Jest + Supertest) + npm audit (SCA)
-# ├ tests + build frontend (Vitest + Vite) + npm audit (SCA)
-# ├ Gitleaks : détection de secrets committés dans l'historique git
-# └ pour chaque image (backend, frontend) :
-#     build Docker → scan Trivy (vulnérabilités HIGH/CRITICAL bloquantes)
-#     → push vers GHCR (uniquement sur push main, jamais sur les PR)
+# 1 · Lint      → ESLint + Prettier (backend + frontend) ....... « fail fast » sur le style
+# 2 · Test      → Jest + Supertest / Vitest, couverture ≥ 60%
+# 3 · Secrets   → Gitleaks (secrets committés dans l'historique)
+# 4 · SCA       → Trivy fs (vulnérabilités des DÉPENDANCES)
+# 5 · SAST      → Semgrep (vulnérabilités du CODE applicatif)
+# 6 · Image     → build Docker → Trivy image → push GHCR (push main uniquement)
+#
+# SCA (étape 4) ≠ SAST (étape 5) : la SCA analyse les bibliothèques tierces
+# (ce que tu importes), le SAST analyse ton propre code source.
 
 name: CI
 
@@ -19,41 +22,44 @@ permissions:
   contents: read
 
 jobs:
-  backend-test:
-    name: Backend · tests unitaires + audit
+  # ─────────────────────────────────────────────────────────────
+  # 1 · LINT — rapide, casse tout de suite si le code est « sale »
+  # ─────────────────────────────────────────────────────────────
+  lint:
+    name: 1 · Lint (ESLint + Prettier)
     runs-on: ubuntu-latest
-    defaults:
-      run:
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+
+      - name: Backend — install + ESLint + Prettier
         working-directory: backend
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+        run: |
+          npm ci
+          npm run lint
+          npm run format:check
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
-
-      - name: Installer les dépendances
-        run: npm ci
-
-      - name: Tests unitaires (Jest + Supertest)
-        run: npm test
-
-      # SCA : bloque le pipeline si une dépendance de production a une
-      # vulnérabilité HIGH ou CRITICAL connue (--omit=dev : seules les
-      # dépendances embarquées dans l'image de prod sont contrôlées)
-      - name: Audit des dépendances (npm audit)
-        run: npm audit --omit=dev --audit-level=high
-
-  frontend-test:
-    name: Frontend · tests + build + audit
-    runs-on: ubuntu-latest
-    defaults:
-      run:
+      - name: Frontend — install + ESLint + Prettier
         working-directory: frontend
+        run: |
+          npm ci
+          npm run lint
+          npm run format:check
+
+  # ─────────────────────────────────────────────────────────────
+  # 2 · TESTS UNITAIRES + couverture (seuil 60% défini côté projet)
+  # ─────────────────────────────────────────────────────────────
+  test:
+    name: 2 · Tests unitaires + couverture
+    needs: lint
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -63,35 +69,37 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: '**/package-lock.json'
 
-      - name: Installer les dépendances
-        run: npm ci
+      - name: Backend — Jest + Supertest (couverture ≥ 60%)
+        working-directory: backend
+        run: |
+          npm ci
+          npm run test:coverage
 
-      - name: Tests unitaires (Vitest)
-        run: npm test
+      - name: Frontend — Vitest (couverture ≥ 60%)
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run test:coverage
 
-      - name: Build de production (Vite)
-        run: npm run build
-
-      - name: Audit des dépendances (npm audit)
-        run: npm audit --omit=dev --audit-level=high
-
-  secrets-scan:
-    name: Gitleaks · détection de secrets
+  # ─────────────────────────────────────────────────────────────
+  # 3 · SECRET SCANNING — binaire Gitleaks (open-source, sans licence)
+  # ─────────────────────────────────────────────────────────────
+  secrets:
+    name: 3 · Secret scanning (Gitleaks)
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (historique complet)
         uses: actions/checkout@v4
         with:
-          # Gitleaks analyse tout l'historique git, pas seulement le dernier commit
-          fetch-depth: 0
+          fetch-depth: 0 # Gitleaks analyse tout l'historique git
 
-      # On utilise le binaire Gitleaks directement (open-source, gratuit) plutôt
-      # que l'action gitleaks/gitleaks-action, qui exige une licence payante sur
-      # les dépôts d'organisation. Le binaire, lui, est libre pour tous.
-      # Il analyse tout l'historique git et sort en code 1 si un secret est trouvé.
-      - name: Scan Gitleaks (CLI open-source, sans licence)
+      # On utilise le binaire directement plutôt que l'action gitleaks/gitleaks-action,
+      # qui exige une licence payante sur les dépôts d'organisation. Sort en code 1
+      # si un secret est trouvé.
+      - name: Scan Gitleaks
         env:
           GITLEAKS_VERSION: 8.30.1
         run: |
@@ -99,10 +107,57 @@ jobs:
             | tar -xz gitleaks
           ./gitleaks git . --redact --verbose
 
-  docker:
-    name: Image ${{ matrix.service }} · build + Trivy + push
+  # ─────────────────────────────────────────────────────────────
+  # 4 · SCA — Trivy en mode filesystem : vulnérabilités des dépendances
+  #     (lit les package-lock.json, aucune install nécessaire)
+  # ─────────────────────────────────────────────────────────────
+  sca:
+    name: 4 · SCA — dépendances (Trivy fs)
+    needs: secrets
     runs-on: ubuntu-latest
-    needs: [backend-test, frontend-test]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Trivy fs — scan des dépendances
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+
+  # ─────────────────────────────────────────────────────────────
+  # 5 · SAST — Semgrep sur le CODE applicatif (backend + frontend)
+  #     Règles lisibles en YAML ; on cible src/ (pas l'IaC k8s).
+  # ─────────────────────────────────────────────────────────────
+  sast:
+    name: 5 · SAST — code (Semgrep)
+    needs: sca
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Image officielle Semgrep ; --error => sortie non nulle si findings
+      - name: Semgrep scan
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src semgrep/semgrep \
+            semgrep scan \
+              --config p/javascript --config p/nodejs --config p/react \
+              --error --metrics off \
+              backend/src backend/tests frontend/src
+
+  # ─────────────────────────────────────────────────────────────
+  # 6 · IMAGE — build → Trivy image (OS + deps) → push GHCR
+  # ─────────────────────────────────────────────────────────────
+  image:
+    name: 6 · Image ${{ matrix.service }} (build + Trivy)
+    needs: sast
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write # push vers GitHub Container Registry
@@ -126,16 +181,14 @@ jobs:
           load: true
           tags: ${{ env.IMAGE }}:${{ github.sha }}
 
-      # Scan de l'image : vulnérabilités OS + dépendances applicatives.
-      # exit-code 1 => le job échoue si une CVE HIGH/CRITICAL corrigeable est trouvée
-      - name: Scan Trivy
+      - name: Scan Trivy (image)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.IMAGE }}:${{ github.sha }}
           format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          exit-code: "1"
+          exit-code: '1'
 
       - name: Login GHCR
         if: github.event_name == 'push'

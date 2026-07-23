@@ -31,7 +31,7 @@ function validateTask(body, { partial = false } = {}) {
     return `Priorité invalide (attendu : ${PRIORITIES.join(', ')})`;
   }
   if ('due_date' in body && body.due_date != null && body.due_date !== '') {
-    if (Number.isNaN(Date.parse(body.due_date))) return 'Date d\'échéance invalide';
+    if (Number.isNaN(Date.parse(body.due_date))) return "Date d'échéance invalide";
   }
   return null;
 }
@@ -128,10 +128,10 @@ router.delete('/:id', async (req, res, next) => {
     const id = parseId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Identifiant invalide' });
 
-    const result = await db.query(
-      'DELETE FROM tasks WHERE id = $1 AND user_id = $2 RETURNING id',
-      [id, req.user.id]
-    );
+    const result = await db.query('DELETE FROM tasks WHERE id = $1 AND user_id = $2 RETURNING id', [
+      id,
+      req.user.id
+    ]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Tâche introuvable' });
     }

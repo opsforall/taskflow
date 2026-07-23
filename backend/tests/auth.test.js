@@ -36,9 +36,7 @@ describe('POST /api/auth/register', () => {
   });
 
   it('ne renvoie jamais le hash du mot de passe', async () => {
-    db.query
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [USER_ROW] });
+    db.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [USER_ROW] });
 
     const res = await request(app)
       .post('/api/auth/register')
@@ -98,7 +96,7 @@ describe('POST /api/auth/login', () => {
     expect(res.status).toBe(401);
   });
 
-  it('renvoie le même message pour un email inconnu (pas d\'énumération de comptes)', async () => {
+  it("renvoie le même message pour un email inconnu (pas d'énumération de comptes)", async () => {
     db.query.mockResolvedValueOnce({ rows: [USER_ROW] });
     const wrongPassword = await request(app)
       .post('/api/auth/login')
@@ -114,9 +112,7 @@ describe('POST /api/auth/login', () => {
   });
 
   it('rejette une requête sans mot de passe (400)', async () => {
-    const res = await request(app)
-      .post('/api/auth/login')
-      .send({ email: 'alice@example.com' });
+    const res = await request(app).post('/api/auth/login').send({ email: 'alice@example.com' });
 
     expect(res.status).toBe(400);
   });

@@ -41,7 +41,7 @@ services:
     build: ./frontend
     environment:
       # ← LA variable de démo : blue, red, yellow, green, purple, teal
-      APP_COLOR: ${APP_COLOR:-red}
+      APP_COLOR: ${APP_COLOR:-blue}
       # URL interne du backend, utilisée par le proxy nginx pour /api
       BACKEND_URL: http://backend:3000
     ports:

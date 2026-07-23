@@ -10,11 +10,9 @@ const router = express.Router();
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function signToken(user) {
-  return jwt.sign(
-    { id: user.id, email: user.email, name: user.name },
-    config.jwtSecret,
-    { expiresIn: config.jwtExpiresIn }
-  );
+  return jwt.sign({ id: user.id, email: user.email, name: user.name }, config.jwtSecret, {
+    expiresIn: config.jwtExpiresIn
+  });
 }
 
 function publicUser(row) {
@@ -86,10 +84,9 @@ router.post('/login', async (req, res, next) => {
 // GET /api/auth/me — valide le token et renvoie le profil courant
 router.get('/me', authenticate, async (req, res, next) => {
   try {
-    const result = await db.query(
-      'SELECT id, name, email, created_at FROM users WHERE id = $1',
-      [req.user.id]
-    );
+    const result = await db.query('SELECT id, name, email, created_at FROM users WHERE id = $1', [
+      req.user.id
+    ]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Utilisateur introuvable' });
     }

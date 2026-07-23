@@ -12,6 +12,20 @@ export default defineConfig({
     }
   },
   test: {
-    environment: 'node'
+    environment: 'node',
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov'],
+      // Périmètre volontairement réduit à la logique testée au démarrage
+      // (le module de thème). On l'élargira à mesure que des tests sont ajoutés
+      // — c'est le sens du seuil bas « pour ne pas décourager ».
+      include: ['src/theme.js'],
+      thresholds: {
+        branches: 60,
+        functions: 60,
+        lines: 60,
+        statements: 60
+      }
+    }
   }
 });

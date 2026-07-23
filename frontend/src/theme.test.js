@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { THEMES, DEFAULT_THEME, resolveTheme } from './theme';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { THEMES, DEFAULT_THEME, resolveTheme, getAppColor, applyTheme } from './theme';
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe('resolveTheme', () => {
   it('accepte une couleur connue', () => {
@@ -36,5 +38,42 @@ describe('THEMES', () => {
 
   it('le thème par défaut existe', () => {
     expect(THEMES[DEFAULT_THEME]).toBeDefined();
+  });
+});
+
+describe('getAppColor', () => {
+  it('lit la couleur injectée au runtime via window.__ENV__', () => {
+    vi.stubGlobal('window', { __ENV__: { APP_COLOR: 'red' } });
+    expect(getAppColor()).toBe('red');
+  });
+
+  it('retombe sur le thème par défaut sans couleur fournie', () => {
+    vi.stubGlobal('window', { __ENV__: { APP_COLOR: '' } });
+    expect(getAppColor()).toBe(DEFAULT_THEME);
+  });
+});
+
+describe('applyTheme', () => {
+  it('pose les variables CSS et data-theme sur la racine', () => {
+    const setProperty = vi.fn();
+    const setAttribute = vi.fn();
+    vi.stubGlobal('document', {
+      documentElement: { style: { setProperty }, setAttribute }
+    });
+
+    const applied = applyTheme('purple');
+
+    expect(applied).toBe('purple');
+    expect(setProperty).toHaveBeenCalledWith('--primary', THEMES.purple.primary);
+    expect(setAttribute).toHaveBeenCalledWith('data-theme', 'purple');
+  });
+
+  it('normalise une couleur inconnue vers le défaut', () => {
+    const setProperty = vi.fn();
+    const setAttribute = vi.fn();
+    vi.stubGlobal('document', {
+      documentElement: { style: { setProperty }, setAttribute }
+    });
+    expect(applyTheme('inconnue')).toBe(DEFAULT_THEME);
   });
 });

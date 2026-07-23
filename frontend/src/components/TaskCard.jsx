@@ -18,11 +18,7 @@ export default function TaskCard({ task, onEdit, onDelete, onStatusChange }) {
           <button className="icon-btn" onClick={() => onEdit(task)} title="Modifier">
             <IconEdit width={15} height={15} />
           </button>
-          <button
-            className="icon-btn danger"
-            onClick={() => onDelete(task)}
-            title="Supprimer"
-          >
+          <button className="icon-btn danger" onClick={() => onDelete(task)} title="Supprimer">
             <IconTrash width={15} height={15} />
           </button>
         </div>

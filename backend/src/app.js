@@ -50,7 +50,7 @@ app.use((req, res) => {
 
 // Gestionnaire d'erreurs : log serveur complet, message générique côté client
 // (ne jamais exposer stack trace ou détails internes)
-app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
+app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ error: 'Erreur interne du serveur' });
 });
