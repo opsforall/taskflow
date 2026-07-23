@@ -6,11 +6,19 @@ updates:
     directory: /backend
     schedule:
       interval: weekly
+    ignore:
+      # Les sauts de version majeurs se font volontairement, pas par bot
+      # (les correctifs de sécurité et mises à jour mineures restent proposés)
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /frontend
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: docker
     directories:
