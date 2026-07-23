@@ -1,0 +1,12 @@
+# Volume persistant : les données PostgreSQL survivent aux redémarrages du pod
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: taskflow
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

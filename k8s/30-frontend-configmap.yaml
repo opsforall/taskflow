@@ -1,0 +1,17 @@
+# ★ La ConfigMap de la démo APP_COLOR ★
+#
+# Changer la couleur du front SANS rebuilder l'image :
+#   1. kubectl -n taskflow edit configmap frontend-config   (APP_COLOR: red)
+#   2. kubectl -n taskflow rollout restart deployment/frontend
+#      (les variables d'environnement sont lues au démarrage du conteneur)
+#
+# Ou en une ligne, sans passer par la ConfigMap (surcharge directe) :
+#   kubectl -n taskflow set env deployment/frontend APP_COLOR=purple
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: taskflow
+data:
+  APP_COLOR: "blue" # ← blue | red | yellow | green | purple | teal
+  BACKEND_URL: "http://backend:3000" # cible du proxy nginx pour /api

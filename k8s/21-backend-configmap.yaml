@@ -1,0 +1,14 @@
+# ConfigMap : configuration NON sensible du backend.
+# Règle du jeu : ConfigMap = paramètres, Secret = credentials.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: taskflow
+data:
+  DB_HOST: postgres # DNS du Service PostgreSQL dans le namespace
+  DB_PORT: "5432"
+  DB_USER: taskflow
+  DB_NAME: taskflow
+  JWT_EXPIRES_IN: 24h
+  CORS_ORIGIN: "*" # à restreindre au domaine réel en production

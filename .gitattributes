@@ -1,0 +1,4 @@
+# Les scripts shell doivent rester en LF : ils sont exécutés dans des conteneurs Linux
+*.sh text eol=lf
+# Normalise le reste automatiquement
+* text=auto

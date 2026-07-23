@@ -1,0 +1,25 @@
+# Point d'entrée HTTP du cluster. Tout le trafic va au frontend :
+# le nginx du pod frontend sert la SPA et relaie /api vers le backend.
+#
+# Nécessite un Ingress Controller (ex. ingress-nginx). Sans contrôleur, tester avec :
+#   kubectl -n taskflow port-forward svc/frontend 8080:80
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: taskflow
+  namespace: taskflow
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false" # pas de TLS en local ; à retirer avec un vrai certificat
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: taskflow.local # à ajouter dans /etc/hosts (ou C:\Windows\System32\drivers\etc\hosts)
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

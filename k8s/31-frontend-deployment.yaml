@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: taskflow
+  labels:
+    app: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          # ⚠️ adapte "modhafferraihane" si ton utilisateur GitHub diffère
+          image: ghcr.io/modhafferraihane/taskflow-frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080 # nginx non-privilégié écoute sur 8080
+          # APP_COLOR et BACKEND_URL arrivent ici depuis la ConfigMap.
+          # Alternative pédagogique — variable posée en dur dans le manifest :
+          #   env:
+          #     - name: APP_COLOR
+          #       value: "red"
+          envFrom:
+            - configMapRef:
+                name: frontend-config
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          # Durcissement : nginx-unprivileged tourne en uid 101, et le
+          # système de fichiers racine est en lecture seule — les seuls
+          # emplacements inscriptibles sont des volumes éphémères :
+          #  - /tmp : env.js généré au démarrage + fichiers temporaires nginx
+          #  - /etc/nginx/conf.d : config générée depuis le template (envsubst)
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 101
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: nginx-conf
+          emptyDir: {}

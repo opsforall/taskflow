@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: taskflow
+  labels:
+    app: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          # ⚠️ adapte "modhafferraihane" si ton utilisateur GitHub diffère.
+          # Si le package GHCR est privé, il faut un imagePullSecret (voir README).
+          image: ghcr.io/modhafferraihane/taskflow-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+          # Config non sensible : injectée depuis la ConfigMap
+          envFrom:
+            - configMapRef:
+                name: backend-config
+          # Credentials : injectés depuis le Secret, variable par variable
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secret
+                  key: DB_PASSWORD
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secret
+                  key: JWT_SECRET
+          # Probes branchées sur les endpoints dédiés de l'API
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /api/health/ready # vérifie aussi que la DB répond
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
+          # Durcissement du conteneur
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000 # utilisateur "node" de l'image
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

@@ -1,0 +1,25 @@
+# Dependabot : PRs automatiques de mise à jour des dépendances vulnérables ou obsolètes.
+# Complète npm audit (qui bloque le CI) par une remédiation proactive.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /backend
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directories:
+      - /backend
+      - /frontend
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

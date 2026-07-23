@@ -1,0 +1,53 @@
+# Stack complète en local : PostgreSQL + API + Front
+#
+# Démarrage :        docker compose up --build
+# Changer la couleur du front (démo variable d'environnement) :
+#   APP_COLOR=red docker compose up --build          (bash)
+#   $env:APP_COLOR="red"; docker compose up --build  (PowerShell)
+#
+# Front : http://localhost:8080  —  API : http://localhost:3000/api/health
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: taskflow
+      POSTGRES_PASSWORD: taskflow # dev uniquement — en k8s, ce mot de passe vient d'un Secret
+      POSTGRES_DB: taskflow
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taskflow -d taskflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: ./backend
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: taskflow
+      DB_PASSWORD: taskflow
+      DB_NAME: taskflow
+      JWT_SECRET: dev-secret-change-me # dev uniquement — en k8s, vient d'un Secret
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    environment:
+      # ← LA variable de démo : blue, red, yellow, green, purple, teal
+      APP_COLOR: ${APP_COLOR:-blue}
+      # URL interne du backend, utilisée par le proxy nginx pour /api
+      BACKEND_URL: http://backend:3000
+    ports:
+      - "8080:8080"
+    depends_on:
+      - backend
+
+volumes:
+  db-data:

@@ -1,0 +1,13 @@
+# Service interne (ClusterIP) : la base n'est jamais exposée hors du cluster.
+# Le backend la joint via le DNS interne : postgres.taskflow.svc (ou juste "postgres")
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: taskflow
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
