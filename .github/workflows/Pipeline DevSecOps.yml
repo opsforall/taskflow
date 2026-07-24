@@ -21,7 +21,7 @@
 # version FINALE avec les gates bloquantes.
 # ------------------------------------------------------------------------------
 
-name: CI
+name: Pipeline DevSecOps
 
 on:
   push:
