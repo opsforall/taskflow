@@ -1,0 +1,8 @@
+# Findings Gitleaks acceptes / faux positifs (ignores par EMPREINTE).
+# Format d'une ligne : <commit>:<fichier>:<regle>:<ligne>
+#
+# Faux positif documente : une fausse cle Stripe d'EXEMPLE, presente dans un
+# ancien commit de CORRECTIONS.md (support de cours). Ce n'est PAS un vrai secret.
+# On l'allowliste ici plutot que de reecrire l'historique d'un depot partage.
+# C'est le mecanisme standard pour tracer une exception assumee.
+efac9e3f973d3f9506705eb7d7f31feb79d74590:CORRECTIONS.md:stripe-access-token:98

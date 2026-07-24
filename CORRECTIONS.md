@@ -94,8 +94,11 @@ permanence (le secret reste dans l'historique meme apres suppression). On le fai
 donc en direct :
 
 ```bash
-# 1. Ajouter une fausse cle dans un fichier, par exemple backend/src/config.js :
-#    const STRIPE_KEY = "sk_live_51H8xExampleFakeKey1234567890abcdef";
+# 1. Ajouter une fausse cle dans un fichier, par exemple backend/src/config.js.
+#    Utiliser une VRAIE forme de cle (Gitleaks se base sur le motif + l'entropie) :
+#    const STRIPE_KEY = "sk_live_<COLLER_ICI_UNE_VRAIE_FORME_DE_CLE>";
+#    (le placeholder ci-dessus, avec des chevrons, ne declenche PAS Gitleaks ;
+#     c'est justement pourquoi la doc peut le montrer sans polluer le depot.)
 
 # 2. Lancer Gitleaks : il doit lever une alerte
 gitleaks git . --redact --verbose
