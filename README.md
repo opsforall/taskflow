@@ -6,6 +6,15 @@ DevSecOps**. Le métier est volontairement trivial : ce qui est enseigné, c'est
 d'environnement `APP_COLOR` qui change la couleur du front à chaque étape de la chaîne
 (Dockerfile → `docker run -e` → env Kubernetes → ConfigMap).
 
+## Parcours guidé (à suivre dans l'ordre)
+
+1. [docs/01-lancer-sans-docker.md](docs/01-lancer-sans-docker.md) — lancer l'app à la main, pour
+   comprendre ce qu'on va automatiser (et ressentir les frictions).
+2. [docs/02-conteneuriser.md](docs/02-conteneuriser.md) — Docker et Compose : la stack en une
+   commande, la config injectée au runtime (`APP_COLOR`).
+3. [docs/03-pipeline-ci.md](docs/03-pipeline-ci.md) — la pipeline DevSecOps : tests et scans
+   automatiques et bloquants à chaque push.
+
 ## Architecture
 
 ```
