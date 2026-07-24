@@ -1,0 +1,9 @@
+{
+  "name": "demo-insecure",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dependance volontairement vulnerable pour la demo SCA - NE PAS UTILISER",
+  "dependencies": {
+    "lodash": "4.17.4"
+  }
+}

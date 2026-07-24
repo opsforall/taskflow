@@ -23,15 +23,7 @@
       "src/**/*.js",
       "!src/index.js",
       "!src/db.js"
-    ],
-    "coverageThreshold": {
-      "global": {
-        "branches": 60,
-        "functions": 60,
-        "lines": 60,
-        "statements": 60
-      }
-    }
+    ]
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

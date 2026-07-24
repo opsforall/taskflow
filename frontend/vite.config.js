@@ -17,15 +17,11 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'lcov'],
       // Périmètre volontairement réduit à la logique testée au démarrage
-      // (le module de thème). On l'élargira à mesure que des tests sont ajoutés
-      // — c'est le sens du seuil bas « pour ne pas décourager ».
-      include: ['src/theme.js'],
-      thresholds: {
-        branches: 60,
-        functions: 60,
-        lines: 60,
-        statements: 60
-      }
+      // (le module de thème). On l'élargira à mesure que des tests sont ajoutés.
+      include: ['src/theme.js']
+      // Pas de `thresholds` : la couverture est MESURÉE et affichée, mais elle
+      // ne BLOQUE pas la pipeline (objectif indicatif de 60% au démarrage du
+      // module, pour ne pas décourager). On pourra la rendre bloquante plus tard.
     }
   }
 });

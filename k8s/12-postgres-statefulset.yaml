@@ -1,0 +1,106 @@
+# PostgreSQL en StatefulSet (et non Deployment) : c'est le contrôleur adapté aux
+# applications AVEC ÉTAT (stateful). Différences clés avec un Deployment :
+#   - identité stable et ordonnée des pods (postgres-0, postgres-1, ...)
+#   - chaque pod obtient SON volume via volumeClaimTemplates (PVC dédié et stable)
+#   - le volume suit le pod à travers les redémarrages/reschedulings
+# Pour une base mono-instance, c'est le pattern correct (le volume ne peut pas
+# être partagé par plusieurs pods en ReadWriteOnce).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: taskflow
+  labels:
+    app: postgres
+spec:
+  serviceName: postgres # ← doit pointer vers le Service headless (13-postgres-service.yaml)
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      # securityContext AU NIVEAU DU POD. postgres:alpine tourne sous l'uid 70.
+      # fsGroup 70 rend le volume monté inscriptible par cet utilisateur, ce qui
+      # permet à postgres de tourner en NON-ROOT dès l'initialisation (initdb).
+      # (Si initdb échoue sur un cluster particulier, ajuster fsGroup/runAsUser.)
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:16.4-alpine # tag PRÉCIS, jamais flottant (supply chain)
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: taskflow
+            - name: POSTGRES_DB
+              value: taskflow
+            # Le mot de passe vient du Secret, jamais en clair dans le manifeste
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+            # PGDATA dans un sous-dossier du volume : évite les soucis quand le
+            # point de montage contient déjà un dossier lost+found.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: tmp
+              mountPath: /tmp
+            - name: run
+              mountPath: /var/run/postgresql
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "taskflow", "-d", "taskflow"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "taskflow", "-d", "taskflow"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          # securityContext AU NIVEAU DU CONTENEUR (durcissement)
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true # rootfs en lecture seule ; les chemins
+            # inscriptibles nécessaires sont montés en volumes éphémères ci-dessous
+            capabilities:
+              drop: ["ALL"]
+      # Volumes éphémères inscriptibles requis par postgres quand le rootfs est en
+      # lecture seule. Les DONNÉES, elles, vont sur le volume persistant « data ».
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
+  # volumeClaimTemplates : le StatefulSet crée automatiquement un PVC par pod
+  # (ici « data-postgres-0 »). C'est LA façon idiomatique de gérer le stockage
+  # persistant d'un StatefulSet.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi

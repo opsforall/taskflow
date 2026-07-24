@@ -15,12 +15,19 @@ spec:
       labels:
         app: backend
     spec:
+      # securityContext au niveau du POD : seccompProfile RuntimeDefault applique
+      # le profil seccomp par défaut (filtrage des appels système dangereux).
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: backend
           # ⚠️ adapte "modhafferraihane" si ton utilisateur GitHub diffère.
           # Si le package GHCR est privé, il faut un imagePullSecret (voir README).
-          image: ghcr.io/modhafferraihane/taskflow-backend:latest
-          imagePullPolicy: Always
+          # Tag VERSIONNÉ (jamais :latest) : reproductibilité + traçabilité des CVE.
+          # La CI publie :<sha> et :latest ; en prod, épingler un tag ou un digest.
+          image: ghcr.io/modhafferraihane/taskflow-backend:1.0.0
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
           # Config non sensible : injectée depuis la ConfigMap

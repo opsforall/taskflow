@@ -20,12 +20,16 @@
 services:
   # --- Base de données PostgreSQL --------------------------------------------
   db:
-    image: postgres:16-alpine # image officielle prête à l'emploi (pas de build)
+    # Tag PRÉCIS (16.4) et non flottant (16 ou latest) : sujet abordé en cours sur
+    # la supply chain. Un tag flottant peut changer sous nos pieds d'un build à
+    # l'autre, ce qui casse la reproductibilité et masque l'arrivée de CVE.
+    image: postgres:16.4-alpine
     environment:
       POSTGRES_USER: taskflow
-      # ⚠️ Mot de passe en clair : ACCEPTABLE en dev local uniquement.
-      # En Kubernetes, il provient d'un Secret, jamais du fichier de manifeste.
-      POSTGRES_PASSWORD: taskflow
+      # Le mot de passe est lu depuis un fichier .env NON commité (voir .env.example).
+      # La syntaxe ${VAR:-défaut} garde un `docker compose up` fonctionnel même sans
+      # .env (valeur de repli en dev). En k8s, ce secret vient d'un objet Secret.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taskflow}
       POSTGRES_DB: taskflow
     volumes:
       # Volume nommé : les données SURVIVENT à la suppression du conteneur.
@@ -46,12 +50,18 @@ services:
       DB_HOST: db # ← nom du service = nom DNS sur le réseau Compose
       DB_PORT: "5432"
       DB_USER: taskflow
-      DB_PASSWORD: taskflow
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-taskflow} # même secret que la base (.env)
       DB_NAME: taskflow
-      JWT_SECRET: dev-secret-change-me # dev uniquement — en k8s vient d'un Secret
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me} # secret lu depuis .env
     ports:
       # "hôte:conteneur" — publie le port 3000 du conteneur sur localhost:3000.
       - "3000:3000"
+    # Durcissement, pour préfigurer le securityContext Kubernetes :
+    read_only: true # système de fichiers racine en LECTURE SEULE (= readOnlyRootFilesystem)
+    tmpfs:
+      - /tmp # seul emplacement inscriptible autorisé (volume éphémère en RAM)
+    security_opt:
+      - no-new-privileges:true # interdit l'escalade de privilèges (= allowPrivilegeEscalation:false)
     depends_on:
       db:
         # N'attend pas seulement que le conteneur db démarre, mais qu'il soit

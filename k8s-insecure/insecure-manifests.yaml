@@ -1,0 +1,68 @@
+# ==============================================================================
+# MANIFESTS VOLONTAIREMENT VULNÉRABLES — NE PAS DÉPLOYER
+# ==============================================================================
+# Chaque mauvaise pratique est annotée avec la règle Trivy correspondante (KSV...).
+# Comparer avec la version durcie dans k8s/ (mêmes ressources, sécurisées).
+# ------------------------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: taskflow-insecure
+---
+# Mot de passe stocké dans un ConfigMap EN CLAIR (au lieu d'un Secret).
+# Un ConfigMap n'est ni chiffré ni traité comme sensible : mauvaise pratique.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-config-insecure
+  namespace: taskflow-insecure
+data:
+  POSTGRES_PASSWORD: "SuperSecret123" # ne JAMAIS mettre un secret dans un ConfigMap
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-insecure
+  namespace: taskflow-insecure
+  labels:
+    app: backend-insecure
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend-insecure
+  template:
+    metadata:
+      labels:
+        app: backend-insecure
+    spec:
+      # Volume hostPath : monte un dossier de l'HÔTE dans le conteneur.
+      # Fuite/évasion possible vers le système hôte. (Trivy KSV023)
+      volumes:
+        - name: host-root
+          hostPath:
+            path: /
+      containers:
+        - name: backend
+          # Tag flottant :latest → build non reproductible, CVE non traçables. (KSV013)
+          image: ghcr.io/example/taskflow-backend:latest
+          # Aucune limite de ressources → risque de DoS par épuisement. (KSV011/KSV015/KSV018)
+          # Aucune probe → l'orchestrateur ne sait pas si le pod est sain.
+          env:
+            # Secret injecté en clair depuis un ConfigMap (voir ci-dessus).
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                configMapKeyRef:
+                  name: db-config-insecure
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - name: host-root
+              mountPath: /host
+          # securityContext dangereux : cumul de toutes les mauvaises pratiques.
+          securityContext:
+            privileged: true # conteneur privilégié = quasi-root sur l'hôte (KSV017, CRITICAL)
+            runAsUser: 0 # exécution en root (KSV012)
+            allowPrivilegeEscalation: true # escalade de privilèges autorisée (KSV001)
+            readOnlyRootFilesystem: false # rootfs inscriptible (KSV014)
+            capabilities:
+              add: ["SYS_ADMIN", "NET_ADMIN"] # capacités dangereuses ajoutées (KSV003/KSV022)

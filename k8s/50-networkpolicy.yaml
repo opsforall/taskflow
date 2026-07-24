@@ -1,0 +1,31 @@
+# NetworkPolicy : segmentation réseau « zero trust » à l'intérieur du cluster.
+# Par défaut, dans Kubernetes, TOUS les pods peuvent se parler librement. Cette
+# règle restreint l'accès à la base : seuls les pods du backend peuvent ouvrir
+# une connexion vers PostgreSQL, sur le port 5432. Tout autre trafic entrant
+# vers la base est refusé (par exemple un frontend compromis ne pourra pas
+# atteindre directement la base).
+#
+# ⚠️ Une NetworkPolicy n'est APPLIQUÉE que si le cluster utilise un plugin réseau
+# (CNI) qui la supporte (Calico, Cilium, etc.). Sur un cluster sans CNI compatible
+# (certains kind/minikube par défaut), l'objet est accepté mais NON appliqué.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-allow-backend-only
+  namespace: taskflow
+spec:
+  # La politique s'applique aux pods de la base.
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    # Autorise UNIQUEMENT le trafic venant des pods du backend, port 5432.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: backend
+      ports:
+        - protocol: TCP
+          port: 5432

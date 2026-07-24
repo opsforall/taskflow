@@ -1,11 +1,19 @@
-# Service interne (ClusterIP) : la base n'est jamais exposée hors du cluster.
-# Le backend la joint via le DNS interne : postgres.taskflow.svc (ou juste "postgres")
+# Service HEADLESS (clusterIP: None) requis par le StatefulSet.
+# « Headless » = pas d'IP virtuelle ni de load-balancing : le DNS renvoie
+# directement l'IP du (des) pod(s). C'est ce dont un StatefulSet a besoin pour
+# donner une identité réseau stable à chaque réplique.
+# Le backend joint la base via ce nom DNS interne : postgres.taskflow.svc
+# (ou simplement « postgres » dans le même namespace). La base n'est JAMAIS
+# exposée hors du cluster.
 apiVersion: v1
 kind: Service
 metadata:
   name: postgres
   namespace: taskflow
+  labels:
+    app: postgres
 spec:
+  clusterIP: None # ← headless
   selector:
     app: postgres
   ports:

@@ -49,7 +49,7 @@ USER root
 #    officielle nginx, qui traite tout /etc/nginx/templates/*.template).
 COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
 
-# 2) Script d'entrypoint exécuté au démarrage du conteneur : il génère /tmp/env.js
+# 2) Script d'entrypoint exécuté au démarrage du conteneur : il génère /tmp/config.js
 #    à partir de APP_COLOR. C'est ce qui « injecte » la couleur dans le front
 #    statique au runtime (le React lit ce fichier avant de s'afficher).
 #    Tout script placé dans /docker-entrypoint.d/ est lancé automatiquement.

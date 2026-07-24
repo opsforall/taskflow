@@ -14,8 +14,8 @@ server {
     add_header Referrer-Policy "no-referrer" always;
 
     # Configuration runtime générée par 40-inject-env.sh — jamais mise en cache
-    location = /env.js {
-        alias /tmp/env.js;
+    location = /config.js {
+        alias /tmp/config.js;
         add_header Cache-Control "no-store";
     }
 

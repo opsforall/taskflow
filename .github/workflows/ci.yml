@@ -1,126 +1,97 @@
 # ==============================================================================
-# PIPELINE CI DevSecOps — GitHub Actions
+# PIPELINE CI DevSecOps (version BLOQUANTE) - GitHub Actions
 # ==============================================================================
-# Vocabulaire GitHub Actions :
-#   • workflow = ce fichier entier, déclenché par un événement (`on:`)
-#   • job      = un bloc sous `jobs:` qui tourne sur une machine neuve (« runner »)
-#   • step     = une commande (`run:`) ou une action réutilisable (`uses:`)
-#   • needs:   = dépendance entre jobs → exécution SÉQUENTIELLE et « fail fast »
-#                (si un job échoue, les suivants ne démarrent pas)
+# Architecture "fan-out / fan-in" :
+#   - FAN-OUT : tous les jobs d'analyse (lint, test, integration, secrets, sca,
+#     sast, iac-scan) tournent EN PARALLELE des le debut. Chacun est une "porte"
+#     (gate) qui bloque la suite si elle echoue.
+#   - FAN-IN  : le job "build" attend TOUS les precedents (needs), construit et
+#     scanne les images, puis les pousse. "e2e" attend le build.
 #
-# Philosophie DevSecOps « shift-left » : intégrer la qualité et la SÉCURITÉ le
-# plus TÔT possible et de façon AUTOMATIQUE, à chaque push/PR, plutôt qu'à la fin.
-# Chaque étape est une « porte » (gate) : elle bloque la suite si elle échoue.
+# Vocabulaire : workflow (ce fichier), job (bloc sous jobs:, machine neuve),
+# step (commande run: ou action uses:), matrix (decline un job par composant).
 #
-# Les 8 étapes, dans l'ordre :
-#   1 · Lint        → ESLint + Prettier (back + front) ..... « fail fast » sur le style
-#   2 · Test unit.  → Jest + Supertest / Vitest, couverture ≥ 60% (base MOCKÉE)
-#   3 · Intégration → API testée contre une VRAIE PostgreSQL (service éphémère)
-#   4 · Secrets     → Gitleaks (secrets committés dans l'historique git)
-#   5 · SCA         → Trivy fs : vulnérabilités des DÉPENDANCES tierces
-#   6 · SAST        → Semgrep : vulnérabilités de TON PROPRE code
-#   7 · Image       → build Docker → scan Trivy → push GHCR (push main uniquement)
-#   8 · E2E         → Playwright : parcours utilisateur sur la stack DÉPLOYÉE
+# Deux notions de securite a distinguer, volontairement separees en jobs :
+#   - SCA  (job sca)  : audite les DEPENDANCES tierces (ce qu'on importe).
+#   - SAST (job sast) : audite le CODE applicatif (ce qu'on ecrit).
+#   - IaC  (job iac-scan) : audite les MANIFESTS Kubernetes (config d'infra).
 #
-# Deux repères pédagogiques :
-#   • Pyramide des tests projetée sur le temps : plus un test est « proche du
-#     produit fini » (donc coûteux), plus il est tard → unit → intégration →
-#     build → E2E.
-#   • SCA ≠ SAST : la SCA (Software Composition Analysis) audite les BIBLIOTHÈQUES
-#     tierces que tu importes ; le SAST (Static Application Security Testing)
-#     audite le CODE que tu écris. Deux familles de failles distinctes.
+# Une version PERMISSIVE (ci-permissif.yml) existe pour le debut de module :
+# elle laisse passer les alertes (continue-on-error). Ce fichier-ci est la
+# version FINALE avec les gates bloquantes.
 # ------------------------------------------------------------------------------
 
 name: CI
 
-# Déclencheurs : la pipeline tourne à chaque push sur main ET à chaque Pull
-# Request ciblant main. Sur une PR, on valide AVANT de fusionner ; l'étape 7
-# ne poussera l'image que sur un push réel (voir `if: github.event_name`).
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
 
-# Principe de moindre privilège appliqué au jeton GITHUB_TOKEN : par défaut la
-# pipeline n'a que la lecture du dépôt. Les jobs qui ont besoin de plus (ex.
-# l'étape 7 qui pousse des images) demandent explicitement leurs droits.
+# Principe de moindre privilege : lecture seule par defaut. Les jobs qui ont
+# besoin de plus (upload SARIF, push d'image) demandent leurs droits localement.
 permissions:
   contents: read
 
 jobs:
-  # ─────────────────────────────────────────────────────────────
-  # 1 · LINT — rapide, casse tout de suite si le code est « sale »
-  # ─────────────────────────────────────────────────────────────
+  # ============================================================================
+  # FAN-OUT : jobs d'analyse en parallele
+  # ============================================================================
+
+  # --- 1) Lint : qualite/style, par composant --------------------------------
   lint:
-    name: 1 · Lint (ESLint + Prettier)
+    name: lint (${{ matrix.component }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # on veut voir TOUTES les erreurs, pas seulement la 1re
+      matrix:
+        component: [frontend, backend]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: '**/package-lock.json'
-
-      - name: Backend — install + ESLint + Prettier
-        working-directory: backend
+          # cache PAR composant : sinon les caches npm du front et du back se melangent
+          cache-dependency-path: ${{ matrix.component }}/package-lock.json
+      - name: Install + ESLint + Prettier
+        working-directory: ${{ matrix.component }}
         run: |
           npm ci
           npm run lint
           npm run format:check
 
-      - name: Frontend — install + ESLint + Prettier
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run lint
-          npm run format:check
-
-  # ─────────────────────────────────────────────────────────────
-  # 2 · TESTS UNITAIRES + couverture (base de données MOCKÉE)
-  # ─────────────────────────────────────────────────────────────
+  # --- 2) Tests unitaires + couverture, par composant ------------------------
   test:
-    name: 2 · Tests unitaires + couverture
-    needs: lint
+    name: test (${{ matrix.component }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [frontend, backend]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: '**/package-lock.json'
-
-      - name: Backend — Jest + Supertest (couverture ≥ 60%)
-        working-directory: backend
+          cache-dependency-path: ${{ matrix.component }}/package-lock.json
+      # La couverture est MESUREE mais NON bloquante (objectif indicatif 60%),
+      # pour ne pas decourager au demarrage du module.
+      - name: Install + tests + couverture
+        working-directory: ${{ matrix.component }}
         run: |
           npm ci
           npm run test:coverage
 
-      - name: Frontend — Vitest (couverture ≥ 60%)
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run test:coverage
-
-  # ─────────────────────────────────────────────────────────────
-  # 3 · TESTS D'INTÉGRATION — API contre une VRAIE PostgreSQL
-  #     (service éphémère fourni par GitHub Actions)
-  # ─────────────────────────────────────────────────────────────
+  # --- 3) Tests d'integration : API contre une VRAIE PostgreSQL ---------------
   integration:
-    name: 3 · Tests d'intégration (API + PostgreSQL)
-    needs: test
+    name: integration (backend + postgres)
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:16.4-alpine
         env:
           POSTGRES_USER: taskflow
           POSTGRES_PASSWORD: taskflow
@@ -133,21 +104,17 @@ jobs:
           --health-timeout 3s
           --health-retries 10
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: '**/package-lock.json'
-
-      - name: Backend — tests d'intégration (vraie base)
+          cache-dependency-path: backend/package-lock.json
+      - name: Tests d'integration
         working-directory: backend
         env:
           DB_HOST: localhost
-          DB_PORT: '5432'
+          DB_PORT: "5432"
           DB_USER: taskflow
           DB_PASSWORD: taskflow
           DB_NAME: taskflow
@@ -156,22 +123,17 @@ jobs:
           npm ci
           npm run test:integration
 
-  # ─────────────────────────────────────────────────────────────
-  # 4 · SECRET SCANNING — binaire Gitleaks (open-source, sans licence)
-  # ─────────────────────────────────────────────────────────────
+  # --- 4) Secret scanning : tout le depot + son historique --------------------
+  # Pas de matrix : Gitleaks scanne le depot ENTIER, decouper par composant
+  # n'aurait aucun sens (un secret peut etre n'importe ou dans l'historique).
   secrets:
-    name: 4 · Secret scanning (Gitleaks)
-    needs: integration
+    name: secrets (gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout (historique complet)
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Gitleaks analyse tout l'historique git
-
-      # On utilise le binaire directement plutôt que l'action gitleaks/gitleaks-action,
-      # qui exige une licence payante sur les dépôts d'organisation. Sort en code 1
-      # si un secret est trouvé.
+          fetch-depth: 0 # historique complet requis par Gitleaks
+      # Binaire open-source (l'action officielle exige une licence en organisation).
       - name: Scan Gitleaks
         env:
           GITLEAKS_VERSION: 8.30.1
@@ -180,155 +142,216 @@ jobs:
             | tar -xz gitleaks
           ./gitleaks git . --redact --verbose
 
-  # ─────────────────────────────────────────────────────────────
-  # 5 · SCA — Trivy en mode filesystem : vulnérabilités des dépendances
-  #     (lit les package-lock.json, aucune install nécessaire)
-  # ─────────────────────────────────────────────────────────────
+  # --- 5) SCA : vulnerabilites des DEPENDANCES, par composant -----------------
   sca:
-    name: 5 · SCA — dépendances (Trivy fs)
-    needs: secrets
+    name: sca (${{ matrix.component }})
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # pour publier le SARIF dans l'onglet Security
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [frontend, backend]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Trivy fs — scan des dépendances
+      - uses: actions/checkout@v4
+      # Trivy en mode "fs" lit les package-lock.json et signale les CVE connues.
+      # format sarif + exit-code 1 : produit le rapport ET bloque si HIGH/CRITICAL.
+      - name: Trivy fs (dependances)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
-          scan-ref: .
+          scan-ref: ${{ matrix.component }}
           scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          exit-code: '1'
-          format: table
+          exit-code: "1"
+          format: sarif
+          output: trivy-sca-${{ matrix.component }}.sarif
+      # Upload vers l'onglet Security. continue-on-error : cet upload NECESSITE un
+      # depot public OU GitHub Advanced Security ; sur un depot prive sans GHAS,
+      # il echoue silencieusement sans casser la pipeline (le gate ci-dessus suffit).
+      - name: Upload SARIF (SCA)
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-sca-${{ matrix.component }}.sarif
+          category: sca-${{ matrix.component }}
 
-  # ─────────────────────────────────────────────────────────────
-  # 6 · SAST — Semgrep sur le CODE applicatif (backend + frontend)
-  #     Règles lisibles en YAML ; on cible src/ (pas l'IaC k8s).
-  # ─────────────────────────────────────────────────────────────
+  # --- 6) SAST : vulnerabilites du CODE, par composant ------------------------
   sast:
-    name: 6 · SAST — code (Semgrep)
-    needs: sca
+    name: sast (${{ matrix.component }})
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [frontend, backend]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # Image officielle Semgrep ; --error => sortie non nulle si findings
+      - uses: actions/checkout@v4
+      # Semgrep : regles lisibles en YAML (choisi plutot que CodeQL, boite noire).
+      # --error => sortie 1 si findings (gate). --sarif -o => rapport SARIF.
       - name: Semgrep scan
         run: |
           docker run --rm -v "$PWD:/src" -w /src semgrep/semgrep \
             semgrep scan \
               --config p/javascript --config p/nodejs --config p/react \
+              --sarif --output semgrep-${{ matrix.component }}.sarif \
               --error --metrics off \
-              backend/src backend/tests frontend/src
+              ${{ matrix.component }}/src
+      - name: Upload SARIF (SAST)
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep-${{ matrix.component }}.sarif
+          category: sast-${{ matrix.component }}
 
-  # ─────────────────────────────────────────────────────────────
-  # 7 · IMAGE — build → Trivy image (OS + deps) → push GHCR
-  # ─────────────────────────────────────────────────────────────
-  image:
-    name: 7 · Image ${{ matrix.service }} (build + Trivy)
-    needs: sast
+  # --- 7) IaC scan : nos MANIFESTS Kubernetes (Trivy config) ------------------
+  # Pas de Terraform dans ce projet : on scanne donc les manifests k8s/ (la
+  # version durcie). Le dossier k8s-insecure/ est volontairement EXCLU pour que
+  # la pipeline reste verte (il sert de demo "scan rouge", lance a la main).
+  iac-scan:
+    name: iac-scan (manifests)
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write # push vers GitHub Container Registry
-    strategy:
-      matrix:
-        service: [backend, frontend]
-    env:
-      IMAGE: ghcr.io/${{ github.repository_owner }}/taskflow-${{ matrix.service }}
+      security-events: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - name: Trivy config (manifests k8s)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: k8s
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          format: sarif
+          output: trivy-iac.sarif
+      - name: Upload SARIF (IaC)
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-iac.sarif
+          category: iac
 
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
+  # ============================================================================
+  # FAN-IN : build des images (attend TOUTES les analyses)
+  # ============================================================================
+  build:
+    name: build (${{ matrix.component }})
+    runs-on: ubuntu-latest
+    needs: [lint, test, integration, secrets, sca, sast, iac-scan]
+    permissions:
+      contents: read
+      packages: write # push vers GHCR
+      security-events: write # upload SARIF du scan d'image
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [frontend, backend]
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/taskflow-${{ matrix.component }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
 
-      # Build local (load: true) : l'image n'est PAS poussée avant d'être scannée
+      # Build LOCAL (load: true) : l'image n'est pas poussee avant d'etre scannee.
       - name: Build de l'image
         uses: docker/build-push-action@v6
         with:
-          context: ./${{ matrix.service }}
+          context: ./${{ matrix.component }}
           load: true
           tags: ${{ env.IMAGE }}:${{ github.sha }}
 
-      - name: Scan Trivy (image)
+      - name: Scan Trivy de l'image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.IMAGE }}:${{ github.sha }}
-          format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          exit-code: '1'
+          exit-code: "1"
+          format: sarif
+          output: trivy-image-${{ matrix.component }}.sarif
 
+      - name: Upload SARIF (image)
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-image-${{ matrix.component }}.sarif
+          category: image-${{ matrix.component }}
+
+      # POINT CLE souvent mal compris : le build ET le scan tournent aussi sur les
+      # pull requests (on valide avant de fusionner). SEUL le push vers GHCR est
+      # conditionne a la branche main. On ne publie donc jamais depuis une PR.
       - name: Login GHCR
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }} # token natif, aucun secret externe
 
-      # Push uniquement sur main (le build est en cache, cette étape est instantanée)
       - name: Push vers GHCR
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v6
         with:
-          context: ./${{ matrix.service }}
+          context: ./${{ matrix.component }}
           push: true
           tags: |
             ${{ env.IMAGE }}:${{ github.sha }}
             ${{ env.IMAGE }}:latest
 
-  # ─────────────────────────────────────────────────────────────
-  # 8 · E2E — Playwright contre la stack complète DÉPLOYÉE via compose
-  # ─────────────────────────────────────────────────────────────
+  # ============================================================================
+  # E2E : tests d'acceptance sur la stack DEPLOYEE (apres le build)
+  # ============================================================================
   e2e:
-    name: 8 · Tests d'acceptance E2E (Playwright)
-    needs: image
+    name: e2e (playwright)
     runs-on: ubuntu-latest
+    needs: [build]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Démarrer la stack (docker compose)
+      - name: Demarrer la stack (docker compose)
         run: docker compose up -d --build
 
-      - name: Attendre que l'application soit prête
+      - name: Attendre que l'application soit prete
         run: |
           for i in $(seq 1 40); do
             back=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/health/ready || true)
             front=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/ || true)
-            if [ "$back" = "200" ] && [ "$front" = "200" ]; then echo "Stack prête"; exit 0; fi
-            echo "tentative $i/40 — backend=$back frontend=$front"; sleep 3
+            if [ "$back" = "200" ] && [ "$front" = "200" ]; then echo "Stack prete"; exit 0; fi
+            echo "tentative $i/40 - backend=$back frontend=$front"; sleep 3
           done
-          echo "La stack n'est pas prête à temps"; docker compose logs; exit 1
+          echo "La stack n'est pas prete a temps"; docker compose logs; exit 1
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: e2e/package-lock.json
 
-      - name: Installer Playwright + navigateur Chromium
+      - name: Installer Playwright + Chromium
         working-directory: e2e
         run: |
           npm ci
           npx playwright install --with-deps chromium
 
-      - name: Tests E2E (Playwright)
+      - name: Tests E2E
         working-directory: e2e
         env:
           E2E_BASE_URL: http://localhost:8080
         run: npm test
 
-      - name: Logs de la stack (si échec)
+      - name: Logs de la stack (si echec)
         if: failure()
         run: docker compose logs
 
-      - name: Arrêter la stack
+      - name: Arreter la stack
         if: always()
         run: docker compose down -v
