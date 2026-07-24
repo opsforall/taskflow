@@ -155,9 +155,13 @@ jobs:
         component: [frontend, backend]
     steps:
       - uses: actions/checkout@v4
-      # Trivy en mode "fs" lit les package-lock.json et signale les CVE connues.
-      # format sarif + exit-code 1 : produit le rapport ET bloque si HIGH/CRITICAL.
-      - name: Trivy fs (dependances)
+      # IMPORTANT : le GATE et le RAPPORT sont deux etapes SEPAREES. En effet,
+      # trivy-action avec `format: sarif` IGNORE le filtre `severity` et rapporte
+      # TOUTES les severites ; combine a `exit-code: 1`, il bloquerait sur une
+      # simple MEDIUM. On garde donc :
+      #   - le GATE en format table (respecte severity HIGH,CRITICAL) => bloquant
+      #   - le RAPPORT en sarif, exit-code 0 => non bloquant, pour l'onglet Security
+      - name: Trivy fs - gate (HIGH/CRITICAL bloquant)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
@@ -166,6 +170,16 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
+          format: table
+      - name: Trivy fs - rapport SARIF (non bloquant)
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ${{ matrix.component }}
+          scanners: vuln
+          ignore-unfixed: true
+          exit-code: "0"
           format: sarif
           output: trivy-sca-${{ matrix.component }}.sarif
       # Upload vers l'onglet Security. continue-on-error : cet upload NECESSITE un
@@ -222,13 +236,22 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@v4
-      - name: Trivy config (manifests k8s)
+      # Gate en table (respecte severity) + rapport SARIF a part (cf. job sca).
+      - name: Trivy config - gate (HIGH/CRITICAL bloquant)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: config
           scan-ref: k8s
           severity: HIGH,CRITICAL
           exit-code: "1"
+          format: table
+      - name: Trivy config - rapport SARIF (non bloquant)
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: k8s
+          exit-code: "0"
           format: sarif
           output: trivy-iac.sarif
       - name: Upload SARIF (IaC)
@@ -268,13 +291,23 @@ jobs:
           load: true
           tags: ${{ env.IMAGE }}:${{ github.sha }}
 
-      - name: Scan Trivy de l'image
+      # Gate en table (respecte severity) + rapport SARIF a part (cf. job sca).
+      - name: Scan Trivy image - gate (HIGH/CRITICAL bloquant)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.IMAGE }}:${{ github.sha }}
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
+          format: table
+
+      - name: Scan Trivy image - rapport SARIF (non bloquant)
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ github.sha }}
+          ignore-unfixed: true
+          exit-code: "0"
           format: sarif
           output: trivy-image-${{ matrix.component }}.sarif
 
