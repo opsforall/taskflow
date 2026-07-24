@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(command -v gh)"
+      "Bash(command -v gh)",
+      "PowerShell(docker run --rm -v \"d:\\\\DevOps\\\\taskflow:/repo\" -w /repo rhysd/actionlint:latest 2>$null | Out-Null; \"actionlint exit: $LASTEXITCODE\")"
     ]
   }
 }

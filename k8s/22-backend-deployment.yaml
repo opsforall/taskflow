@@ -22,11 +22,11 @@ spec:
           type: RuntimeDefault
       containers:
         - name: backend
-          # ⚠️ adapte "modhafferraihane" si ton utilisateur GitHub diffère.
+          # Namespace GHCR = propriétaire du dépôt (opsforall), là où la CI publie.
           # Si le package GHCR est privé, il faut un imagePullSecret (voir README).
           # Tag VERSIONNÉ (jamais :latest) : reproductibilité + traçabilité des CVE.
-          # La CI publie :<sha> et :latest ; en prod, épingler un tag ou un digest.
-          image: ghcr.io/modhafferraihane/taskflow-backend:1.0.0
+          # La CI publie :<sha>, :1.0.0 et :latest.
+          image: ghcr.io/opsforall/taskflow-backend:1.0.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000

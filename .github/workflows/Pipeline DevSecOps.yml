@@ -336,8 +336,11 @@ jobs:
         with:
           context: ./${{ matrix.component }}
           push: true
+          # :1.0.0 est le tag versionne reference par les manifests k8s/.
+          # :<sha> pour la tracabilite, :latest pour la commodite.
           tags: |
             ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:1.0.0
             ${{ env.IMAGE }}:latest
 
   # ============================================================================

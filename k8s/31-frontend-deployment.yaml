@@ -20,9 +20,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: frontend
-          # ⚠️ adapte "modhafferraihane" si ton utilisateur GitHub diffère.
+          # Namespace GHCR = propriétaire du dépôt (opsforall), là où la CI publie.
           # Tag VERSIONNÉ (jamais :latest) : reproductibilité + traçabilité des CVE.
-          image: ghcr.io/modhafferraihane/taskflow-frontend:1.0.0
+          image: ghcr.io/opsforall/taskflow-frontend:1.0.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080 # nginx non-privilégié écoute sur 8080

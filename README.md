@@ -167,9 +167,11 @@ Deployments frontend/backend (2 replicas), **StatefulSet PostgreSQL** (+ PVC via
 `volumeClaimTemplates`), Services ClusterIP + Service headless pour la base, Ingress, et une
 **NetworkPolicy** qui réserve l'accès à la base au seul backend.
 
-> **Images GHCR** : les Deployments pointent vers `ghcr.io/modhafferraihane/taskflow-*:1.0.0`
-> (tag versionné, jamais `:latest`). Adapte le nom d'utilisateur, publie un tag correspondant, et
-> rends les packages publics (ou crée un `imagePullSecret`).
+> **Images GHCR** : la CI publie sous `ghcr.io/opsforall/taskflow-*` avec les tags `:<sha>`,
+> `:1.0.0` et `:latest`. Les Deployments référencent `:1.0.0` (tag versionné, jamais `:latest`).
+> Par défaut les packages GHCR sont **privés** : rends-les publics **une fois** (Package settings →
+> Change visibility → Public) et ils le restent pour les push suivants, OU crée un `imagePullSecret`
+> (voir plus bas). Il n'existe pas d'API pour basculer la visibilité depuis la pipeline.
 >
 > **NetworkPolicy** : appliquée uniquement si le cluster a un CNI compatible (Calico, Cilium...).
 
