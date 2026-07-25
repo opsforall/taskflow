@@ -23,9 +23,12 @@
 name: Pipeline DevOps
 
 on:
-  push:
+  pull_request:
     branches: [main]
-  workflow_dispatch: # lancement manuel (seul cas ou cette pipeline publie)
+  workflow_dispatch: # lancement manuel de la porte complete
+  # push:
+  #   branches: [main]
+  # workflow_dispatch: # lancement manuel (seul cas ou cette pipeline publie)
 
 # Moindre privilege : lecture seule par defaut, chaque job demande le reste.
 permissions:
