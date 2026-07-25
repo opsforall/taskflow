@@ -50,7 +50,7 @@ jobs:
   # `matrix` decline le meme job une fois par composant : deux machines en
   # parallele, une pour le frontend, une pour le backend.
   test-qualite:
-    name: Test Qualité ESLint (${{ matrix.component }})
+    name: ESLint (${{ matrix.component }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false # on veut voir les erreurs des DEUX composants
@@ -89,7 +89,7 @@ jobs:
   # Le frontend utilise Vitest, pas Jest : meme facon d'ecrire les tests
   # (describe / it / expect), mais un lanceur different, integre a Vite.
   test-unitaire:
-    name: Test unitaire ${{ matrix.tool }} (${{ matrix.component }})
+    name: ${{ matrix.tool }} (${{ matrix.component }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -153,7 +153,7 @@ jobs:
   #   docker run -d -p 9000:9000 -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
   #     sonarqube:26.7.0.124771-community        (puis http://localhost:9000)
   quality:
-    name: Test qualité SonarQube
+    name: Test Qualité SonarQube
     runs-on: ubuntu-latest
     needs: [test-qualite, test-unitaire]
     # NON BLOQUANT pour l'instant : la qualite est MESUREE et affichee, mais un
@@ -228,7 +228,7 @@ jobs:
             "http://localhost:9000/api/qualitygates/project_status?projectKey=taskflow" \
             | jq -r .projectStatus.status)
           {
-            echo "### Test qualité SonarQube"
+            echo "### Test Qualité SonarQube"
             echo ""
             echo "| Mesure | Valeur |"
             echo "|---|---|"
