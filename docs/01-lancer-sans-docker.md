@@ -36,22 +36,10 @@ premier démarrage (fichier `backend/src/db.js`).
 
 ```bash
 cd backend
-npm install        # installe les dépendances (express, pg, jsonwebtoken...)
+npm.cmd install      # installe les dépendances (express, pg, jsonwebtoken...)
 npm run dev        # démarre l'API sur http://localhost:3000
 ```
-> **Windows — erreur PowerShell fréquente.** Si `npm install` ou `npm run dev`
-> refuse de s'exécuter avec une erreur du style
-> `l'exécution de scripts est désactivée sur ce système`, ce n'est pas un bug
-> npm : c'est la politique d'exécution PowerShell qui bloque les scripts
-> `.ps1` (npm en fournit un). Corrige une bonne fois pour toutes (pas besoin
-> d'être admin) :
->
-> ```powershell
-> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-> ```
->
-> ou, sans rien changer de permanent, remplace `npm` par `npm.cmd` pour la
-> commande en cours (`npm.cmd install`).
+
 
 Le backend lit sa configuration dans des **variables d'environnement**
 (`DB_HOST`, `DB_PASSWORD`, `JWT_SECRET`...). Si tu ne définis rien, des valeurs
