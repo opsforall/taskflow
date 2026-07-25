@@ -90,6 +90,17 @@ d'exploitation de base (Alpine, nginx). Ce n'est pas le même périmètre.
 > obligatoire que quand l'équipe est prête — et le SBOM, qui inventorie sans
 > juger. Les 5 tests de sécurité, eux, **bloquent**.
 
+**Particularité du job `quality`** : il n'exige aucun compte ni aucune
+configuration. Il démarre son **propre serveur SonarQube jetable** en conteneur,
+génère un token via l'API, analyse, publie les chiffres clés (Quality Gate,
+bugs, couverture…) dans le **Summary** du run, puis le serveur disparaît avec le
+job. Pour explorer l'interface complète, lance le même serveur en local
+(`docker run -d -p 9000:9000 -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true
+sonarqube:26.7.0.124771-community`, puis http://localhost:9000, identifiants
+initiaux `admin`/`admin`). Le jour où l'équipe veut un historique et la
+décoration des pull requests, on remplace ce serveur jetable par un vrai
+(SonarQube Cloud) : seule l'URL et le token changent.
+
 ## 3. Où vont les images ?
 
 Si les 5 portes de sécurité sont vertes **et** qu'on est sur `main` (jamais

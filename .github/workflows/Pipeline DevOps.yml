@@ -102,6 +102,15 @@ jobs:
   # --- 📊 Qualite — SonarQube -------------------------------------------------
   # SonarQube ne relance rien : il LIT le code et les rapports de couverture,
   # puis attribue une note (bugs, code smells, duplication, couverture).
+  #
+  # ZERO CONFIGURATION : pas de compte a creer, pas de secret a enregistrer.
+  # Le job demarre son PROPRE serveur SonarQube en conteneur, genere un token
+  # via l'API, analyse, puis le serveur disparait avec le job.
+  # Compromis assume : pas de tableau de bord a consulter apres coup — les
+  # chiffres cles sont donc publies dans le resume du run (onglet Summary).
+  # Pour explorer l'interface en local :
+  #   docker run -d -p 9000:9000 -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
+  #     sonarqube:26.7.0.124771-community        (puis http://localhost:9000)
   quality:
     name: 📊 Qualité — SonarQube
     runs-on: ubuntu-latest
@@ -113,7 +122,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # historique complet : Sonar s'en sert pour le "New Code"
+          fetch-depth: 0 # historique complet : Sonar s'en sert pour dater les problemes
 
       # On recupere les deux rapports deposes par le job "test", a l'endroit
       # exact ou sonar-project.properties les attend.
@@ -126,20 +135,70 @@ jobs:
           name: coverage-frontend
           path: frontend/coverage
 
-      # Le scan ne tourne que si le serveur SonarQube est configure dans le
-      # depot (variable SONAR_HOST_URL + secret SONAR_TOKEN). Sans cela, le
-      # scanner echouerait sur "URI with undefined scheme" : une URL vide.
+      # Version FIGEE (pas `latest`). SONAR_ES_BOOTSTRAP_CHECKS_DISABLE : le
+      # moteur de recherche interne exige un reglage noyau absent des runners ;
+      # inutile pour un serveur jetable.
+      - name: Demarrer un serveur SonarQube ephemere
+        run: |
+          docker run -d --name sonarqube -p 9000:9000 \
+            -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
+            sonarqube:26.7.0.124771-community
+
+      - name: Attendre que SonarQube soit pret (~1 min)
+        run: |
+          for i in $(seq 1 60); do
+            status=$(curl -s http://localhost:9000/api/system/status | grep -o '"status":"[^"]*"' | cut -d'"' -f4 || true)
+            if [ "$status" = "UP" ]; then echo "SonarQube pret"; exit 0; fi
+            echo "tentative $i/60 - status=${status:-demarrage}"; sleep 5
+          done
+          echo "SonarQube n'a pas demarre a temps"; docker logs sonarqube; exit 1
+
+      # Sur une instance neuve, l'API accepte les identifiants par defaut
+      # admin/admin : on s'en sert pour fabriquer le token d'analyse.
+      # ::add-mask:: le masque dans les logs (reflexe a garder, meme si ce
+      # token ne protege qu'un serveur jetable).
+      - name: Generer un token d'analyse
+        id: sonar
+        run: |
+          token=$(curl -s -u admin:admin -X POST \
+            "http://localhost:9000/api/user_tokens/generate?name=ci" \
+            | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      # qualitygate.wait : le scanner attend le verdict du Quality Gate et
+      # sort en erreur s'il est rouge (rendu non bloquant par continue-on-error).
       - name: 📊 SonarQube — analyse de la qualite du code
-        if: vars.SONAR_HOST_URL != ''
         uses: SonarSource/sonarqube-scan-action@v8
         env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ steps.sonar.outputs.token }}
+          SONAR_HOST_URL: http://localhost:9000
+        with:
+          args: -Dsonar.qualitygate.wait=true
 
-      - name: 📊 SonarQube non configure — analyse ignoree
-        if: vars.SONAR_HOST_URL == ''
+      # Le serveur meurt avec le job : ce resume est la trace qui reste.
+      - name: Publier les mesures dans le resume du run
+        if: always()
         run: |
-          echo "::notice::SonarQube n'est pas configure : definir la variable de depot SONAR_HOST_URL et le secret SONAR_TOKEN pour activer l'analyse."
+          json=$(curl -s -u "${{ steps.sonar.outputs.token }}:" \
+            "http://localhost:9000/api/measures/component?component=taskflow&metricKeys=bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density,ncloc")
+          get() { echo "$json" | jq -r ".component.measures[] | select(.metric==\"$1\") | .value // \"-\""; }
+          gate=$(curl -s -u "${{ steps.sonar.outputs.token }}:" \
+            "http://localhost:9000/api/qualitygates/project_status?projectKey=taskflow" \
+            | jq -r .projectStatus.status)
+          {
+            echo "### 📊 Qualité — SonarQube"
+            echo ""
+            echo "| Mesure | Valeur |"
+            echo "|---|---|"
+            echo "| Quality Gate | **${gate}** |"
+            echo "| Bugs | $(get bugs) |"
+            echo "| Vulnérabilités | $(get vulnerabilities) |"
+            echo "| Code smells | $(get code_smells) |"
+            echo "| Couverture | $(get coverage) % |"
+            echo "| Duplication | $(get duplicated_lines_density) % |"
+            echo "| Lignes de code | $(get ncloc) |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # --- 🐳 Build — Docker  /  📦 Registry — GHCR -------------------------------
   # Build et push dans le meme job : une image construite sur une machine

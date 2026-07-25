@@ -110,6 +110,8 @@ jobs:
           retention-days: 1
 
   # --- 📊 Qualite — SonarQube -------------------------------------------------
+  # Serveur SonarQube JETABLE demarre dans le job : zero compte, zero secret.
+  # Les explications detaillees sont dans "Pipeline DevOps.yml" (meme job).
   quality:
     name: 📊 Qualité — SonarQube
     runs-on: ubuntu-latest
@@ -128,19 +130,60 @@ jobs:
           name: coverage-frontend
           path: frontend/coverage
 
-      # Ne tourne que si le serveur SonarQube est configure dans le depot
-      # (variable SONAR_HOST_URL + secret SONAR_TOKEN) — voir Pipeline DevOps.
+      - name: Demarrer un serveur SonarQube ephemere
+        run: |
+          docker run -d --name sonarqube -p 9000:9000 \
+            -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
+            sonarqube:26.7.0.124771-community
+
+      - name: Attendre que SonarQube soit pret (~1 min)
+        run: |
+          for i in $(seq 1 60); do
+            status=$(curl -s http://localhost:9000/api/system/status | grep -o '"status":"[^"]*"' | cut -d'"' -f4 || true)
+            if [ "$status" = "UP" ]; then echo "SonarQube pret"; exit 0; fi
+            echo "tentative $i/60 - status=${status:-demarrage}"; sleep 5
+          done
+          echo "SonarQube n'a pas demarre a temps"; docker logs sonarqube; exit 1
+
+      - name: Generer un token d'analyse
+        id: sonar
+        run: |
+          token=$(curl -s -u admin:admin -X POST \
+            "http://localhost:9000/api/user_tokens/generate?name=ci" \
+            | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
       - name: 📊 SonarQube — analyse de la qualite du code
-        if: vars.SONAR_HOST_URL != ''
         uses: SonarSource/sonarqube-scan-action@v8
         env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ steps.sonar.outputs.token }}
+          SONAR_HOST_URL: http://localhost:9000
+        with:
+          args: -Dsonar.qualitygate.wait=true
 
-      - name: 📊 SonarQube non configure — analyse ignoree
-        if: vars.SONAR_HOST_URL == ''
+      - name: Publier les mesures dans le resume du run
+        if: always()
         run: |
-          echo "::notice::SonarQube n'est pas configure : definir la variable de depot SONAR_HOST_URL et le secret SONAR_TOKEN pour activer l'analyse."
+          json=$(curl -s -u "${{ steps.sonar.outputs.token }}:" \
+            "http://localhost:9000/api/measures/component?component=taskflow&metricKeys=bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density,ncloc")
+          get() { echo "$json" | jq -r ".component.measures[] | select(.metric==\"$1\") | .value // \"-\""; }
+          gate=$(curl -s -u "${{ steps.sonar.outputs.token }}:" \
+            "http://localhost:9000/api/qualitygates/project_status?projectKey=taskflow" \
+            | jq -r .projectStatus.status)
+          {
+            echo "### 📊 Qualité — SonarQube"
+            echo ""
+            echo "| Mesure | Valeur |"
+            echo "|---|---|"
+            echo "| Quality Gate | **${gate}** |"
+            echo "| Bugs | $(get bugs) |"
+            echo "| Vulnérabilités | $(get vulnerabilities) |"
+            echo "| Code smells | $(get code_smells) |"
+            echo "| Couverture | $(get coverage) % |"
+            echo "| Duplication | $(get duplicated_lines_density) % |"
+            echo "| Lignes de code | $(get ncloc) |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # --- 🔗 Integration — Jest + une VRAIE base PostgreSQL ----------------------
   # `services:` demarre un conteneur PostgreSQL a cote du job. Les tests
