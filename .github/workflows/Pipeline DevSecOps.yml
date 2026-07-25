@@ -1,33 +1,43 @@
 # ==============================================================================
 # PIPELINE DevSecOps - la base DevOps + la securite
 # ==============================================================================
-# Cette pipeline REPREND les 4 jobs de "Pipeline DevOps.yml" (lint, test,
-# quality, build) et y ajoute 5 tests de securite + les tests d'integration et
-# de bout en bout. C'est la PORTE COMPLETE : elle tourne a la fusion sur main.
+# Cette pipeline REPREND les jobs de "Pipeline DevOps.yml" (qualite/tests/build)
+# et y ajoute 5 tests de securite + les tests d'integration et de bout en bout.
+# C'est la PORTE COMPLETE : elle tourne a la fusion sur main.
 #
 # LES 5 TESTS DE SECURITE - a chaque fois : 1 outil, 1 question, 1 job.
 #
-#   secrets   Gitleaks       ai-je committe un mot de passe ?
-#   sca       Trivy fs       mes DEPENDANCES ont-elles des failles connues ?
-#   sast      Semgrep        MON CODE contient-il des failles ?
-#   iac       Trivy config   mes manifests Kubernetes sont-ils durcis ?
-#   image     Trivy image    mon image finale contient-elle des failles ?
+#   secrets        Gitleaks       ai-je committe un mot de passe ?
+#   test-securite  Trivy fs       mes DEPENDANCES ont-elles des failles connues ?
+#   sast           Semgrep        MON CODE contient-il des failles ?
+#   iac            Trivy config   mes manifests Kubernetes sont-ils durcis ?
+#   image          Trivy image    mon image finale contient-elle des failles ?
 #
 # LA DISTINCTION A RETENIR :
 #   SCA  = ce que j'IMPORTE (les bibliotheques des autres)
 #   SAST = ce que j'ECRIS   (mon propre code)
 #   IaC  = ce que je CONFIGURE (mon infrastructure)
 #
-# ENCHAINEMENT - tout part en parallele (fan-out), le build attend tout le
-# monde (fan-in), puis les tests E2E :
+# Les jobs qui utilisaient `strategy: matrix` (qualite, unitaire, securite)
+# ont ete duplioues en un job par composant (frontend/backend) : plus de mot
+# "Matrix" dans le graphe GitHub Actions, au prix d'un peu de repetition.
 #
-#     lint ─┬─► quality ──┐
-#     test ─┘             │
-#     integration ────────┤
-#     secrets ────────────┼─► build (+ scan image + SBOM + push) ─► e2e
-#     sca ────────────────┤
-#     sast ───────────────┤
-#     iac ────────────────┘
+# `integration` a une VRAIE dependance sur les tests unitaires (needs) : inutile
+# de lancer des tests d'integration, plus lents et plus couteux (une vraie
+# base Postgres), si les tests unitaires echouent deja. Consequence assumee :
+# elle n'est plus strictement en parallele avec le reste du fan-out.
+#
+# ENCHAINEMENT :
+#
+#     test-qualite-frontend ─┬─► quality ──────────────────┐
+#     test-qualite-backend ──┤                              │
+#     test-unitaire-frontend ┼─► integration ────────────────┤
+#     test-unitaire-backend ─┘                               │
+#     secrets ──────────────────────────────────────────────┼─► build (+ scan image + SBOM + push) ─► e2e
+#     test-securite-frontend ────────────────────────────────┤
+#     test-securite-backend ─────────────────────────────────┤
+#     sast ───────────────────────────────────────────────────┤
+#     iac ────────────────────────────────────────────────────┘
 #
 # Chaque job est une PORTE : s'il echoue, rien ne se construit, rien n'est
 # publie. C'est le "shift-left" : on bloque au commit, pas en production.
@@ -38,7 +48,6 @@ name: Pipeline DevSecOps
 # Elle ne tourne qu'a la fusion sur main : pendant le developpement, c'est la
 # "Pipeline DevOps" (plus rapide) qui donne le retour sur les pull requests.
 on:
-  
   pull_request:
     branches: [main]
   workflow_dispatch: # lancement manuel de la porte complete
@@ -55,25 +64,21 @@ jobs:
   # LA BASE DevOps - identique a "Pipeline DevOps.yml"
   # ============================================================================
 
-  # --- Test Qualité ESLint -------------------------------------------------------
-  test-qualite:
-    name: Test Qualité ESLint (${{ matrix.component }})
+  # --- Test Qualité ESLint (frontend) -----------------------------------------
+  test-qualite-frontend:
+    name: Test Qualité ESLint (frontend)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        component: [frontend, backend]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: ${{ matrix.component }}/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
       - name: ESLint - analyse du style et des bonnes pratiques
         id: eslint
-        working-directory: ${{ matrix.component }}
+        working-directory: frontend
         run: |
           npm ci
           npm run lint
@@ -83,7 +88,7 @@ jobs:
         run: |
           if [ "${{ steps.eslint.outcome }}" = "success" ]; then verdict="Réussi"; else verdict="Échoué"; fi
           {
-            echo "### Test Qualité ESLint (${{ matrix.component }})"
+            echo "### Test Qualité ESLint (frontend)"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
@@ -93,29 +98,57 @@ jobs:
             echo "| Résultat | **${verdict}** |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # --- Tests - Jest (backend) / Vitest (frontend) --------------------------
-  test-unitaire:
-    name: Test unitaire ${{ matrix.tool }} (${{ matrix.component }})
+  # --- Test Qualité ESLint (backend) ------------------------------------------
+  test-qualite-backend:
+    name: Test Qualité ESLint (backend)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - component: backend
-            tool: Jest
-          - component: frontend
-            tool: Vitest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: ${{ matrix.component }}/package-lock.json
+          cache-dependency-path: backend/package-lock.json
 
-      - name: ${{ matrix.tool }} - tests unitaires + couverture
+      - name: ESLint - analyse du style et des bonnes pratiques
+        id: eslint
+        working-directory: backend
+        run: |
+          npm ci
+          npm run lint
+
+      - name: Résumé
+        if: always()
+        run: |
+          if [ "${{ steps.eslint.outcome }}" = "success" ]; then verdict="Réussi"; else verdict="Échoué"; fi
+          {
+            echo "### Test Qualité ESLint (backend)"
+            echo ""
+            echo "| Champ | Valeur |"
+            echo "|---|---|"
+            echo "| Famille | Qualité |"
+            echo "| Outil | ESLint |"
+            echo "| Type de test / analyse | Analyse statique du code, par fichier |"
+            echo "| Résultat | **${verdict}** |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # --- Test unitaire Vitest (frontend) -----------------------------------------
+  # Le frontend utilise Vitest, pas Jest : meme facon d'ecrire les tests
+  # (describe / it / expect), mais un lanceur different, integre a Vite.
+  test-unitaire-frontend:
+    name: Test unitaire Vitest (frontend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Vitest - tests unitaires + couverture
         id: run_tests
-        working-directory: ${{ matrix.component }}
+        working-directory: frontend
         run: |
           npm ci
           npm run test:coverage
@@ -124,8 +157,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-${{ matrix.component }}
-          path: ${{ matrix.component }}/coverage/lcov.info
+          name: coverage-frontend
+          path: frontend/coverage/lcov.info
           retention-days: 1
           if-no-files-found: warn
 
@@ -134,12 +167,55 @@ jobs:
         run: |
           if [ "${{ steps.run_tests.outcome }}" = "success" ]; then verdict="Réussi"; else verdict="Échoué"; fi
           {
-            echo "### Test unitaire ${{ matrix.tool }} (${{ matrix.component }})"
+            echo "### Test unitaire Vitest (frontend)"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
             echo "| Famille | Test |"
-            echo "| Outil | ${{ matrix.tool }} |"
+            echo "| Outil | Vitest |"
+            echo "| Type de test / analyse | Test unitaire |"
+            echo "| Résultat | **${verdict}** |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # --- Test unitaire Jest (backend) --------------------------------------------
+  test-unitaire-backend:
+    name: Test unitaire Jest (backend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Jest - tests unitaires + couverture
+        id: run_tests
+        working-directory: backend
+        run: |
+          npm ci
+          npm run test:coverage
+
+      - name: Transmettre la couverture au job qualite
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-backend
+          path: backend/coverage/lcov.info
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Résumé
+        if: always()
+        run: |
+          if [ "${{ steps.run_tests.outcome }}" = "success" ]; then verdict="Réussi"; else verdict="Échoué"; fi
+          {
+            echo "### Test unitaire Jest (backend)"
+            echo ""
+            echo "| Champ | Valeur |"
+            echo "|---|---|"
+            echo "| Famille | Test |"
+            echo "| Outil | Jest |"
             echo "| Type de test / analyse | Test unitaire |"
             echo "| Résultat | **${verdict}** |"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -150,7 +226,7 @@ jobs:
   quality:
     name: Test qualité SonarQube
     runs-on: ubuntu-latest
-    needs: [test-qualite, test-unitaire]
+    needs: [test-qualite-frontend, test-qualite-backend, test-unitaire-frontend, test-unitaire-backend]
     continue-on-error: true # mesuree mais pas encore bloquante
     steps:
       - uses: actions/checkout@v4
@@ -226,9 +302,15 @@ jobs:
   # --- Test d'integration - Jest + une VRAIE base PostgreSQL ---------------
   # `services:` demarre un conteneur PostgreSQL a cote du job. Les tests
   # unitaires simulent la base ; ceux-ci parlent a une vraie.
+  #
+  # NEEDS REEL (pas cosmetique) : inutile de payer le cout d'une vraie base
+  # Postgres et de tests plus lents si les tests unitaires echouent deja.
+  # Consequence assumee : ce job demarre apres les tests unitaires, il n'est
+  # plus strictement en parallele avec le reste du fan-out.
   integration:
     name: Test d'intégration Jest + PostgreSQL
     runs-on: ubuntu-latest
+    needs: [test-unitaire-frontend, test-unitaire-backend]
     services:
       postgres:
         image: postgres:16.4-alpine
@@ -290,7 +372,6 @@ jobs:
   # Gitleaks lit le code ET TOUT L'HISTORIQUE git : un secret supprime dans un
   # commit recent reste lisible dans les commits precedents. Le supprimer ne
   # suffit donc pas - il faut le REVOQUER.
-  # Pas de `matrix` : un secret peut etre n'importe ou, on scanne tout le depot.
   secrets:
     name: Sécurité · Secrets Gitleaks
     runs-on: ubuntu-latest
@@ -327,17 +408,13 @@ jobs:
             echo "| Résultat | **${verdict}** |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # --- TEST 2/5 : les dependances - Trivy (SCA) ----------------------------
+  # --- TEST 2/5 : les dependances - Trivy (SCA) - frontend -----------------
   # QUESTION : les bibliotheques que j'installe ont-elles des failles connues ?
   # Trivy lit package-lock.json et compare chaque version aux bases publiques
   # de vulnerabilites (CVE). C'est le "SCA" : Software Composition Analysis.
-  test-securite:
-    name: Sécurité · Dépendances Trivy fs (${{ matrix.component }})
+  test-securite-frontend:
+    name: Sécurité · Dépendances Trivy fs (frontend)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        component: [frontend, backend]
     steps:
       - uses: actions/checkout@v4
 
@@ -349,7 +426,7 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
-          scan-ref: ${{ matrix.component }}
+          scan-ref: frontend
           scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: true
@@ -361,7 +438,41 @@ jobs:
         run: |
           if [ "${{ steps.trivy_sca.outcome }}" = "success" ]; then verdict="Aucune CVE HIGH/CRITICAL"; else verdict="CVE HIGH/CRITICAL détectée(s)"; fi
           {
-            echo "### Sécurité · Dépendances Trivy fs (${{ matrix.component }})"
+            echo "### Sécurité · Dépendances Trivy fs (frontend)"
+            echo ""
+            echo "| Champ | Valeur |"
+            echo "|---|---|"
+            echo "| Famille | Sécurité |"
+            echo "| Outil | Trivy fs |"
+            echo "| Type de test / analyse | Analyse des dépendances (composants) |"
+            echo "| Résultat | **${verdict}** |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # --- TEST 2/5 : les dependances - Trivy (SCA) - backend ------------------
+  test-securite-backend:
+    name: Sécurité · Dépendances Trivy fs (backend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trivy - mes dépendances ont-elles des CVE ?
+        id: trivy_sca
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: backend
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+
+      - name: Résumé
+        if: always()
+        run: |
+          if [ "${{ steps.trivy_sca.outcome }}" = "success" ]; then verdict="Aucune CVE HIGH/CRITICAL"; else verdict="CVE HIGH/CRITICAL détectée(s)"; fi
+          {
+            echo "### Sécurité · Dépendances Trivy fs (backend)"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
@@ -450,11 +561,27 @@ jobs:
   # ============================================================================
   # FAN-IN : build + TEST 5/5 (scan de l'image) + SBOM + publication
   # ============================================================================
+  # Ce job GARDE son `strategy: matrix` (non concerne par le decoupage
+  # ci-dessus) : deux composants a construire, meme etape, aucune raison de
+  # dupliquer ce job.
   build:
     name: Build Docker (${{ matrix.component }})
     runs-on: ubuntu-latest
     # Le build attend que TOUTES les portes soient vertes.
-    needs: [test-qualite, test-unitaire, quality, integration, secrets, test-securite, sast, iac]
+    needs:
+      [
+        test-qualite-frontend,
+        test-qualite-backend,
+        test-unitaire-frontend,
+        test-unitaire-backend,
+        quality,
+        integration,
+        secrets,
+        test-securite-frontend,
+        test-securite-backend,
+        sast,
+        iac,
+      ]
     permissions:
       contents: read
       packages: write

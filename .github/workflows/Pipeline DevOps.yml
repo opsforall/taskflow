@@ -1,7 +1,7 @@
 # ==============================================================================
 # PIPELINE DevOps - la base
 # ==============================================================================
-# 4 jobs, 4 questions, 1 outil par question :
+# 4 familles de jobs, 4 questions, 1 outil par question :
 #
 #   Lint      ESLint     mon code respecte-t-il les regles d'ecriture ?
 #   Tests     Jest/Vitest ma logique fonctionne-t-elle ?
@@ -9,14 +9,20 @@
 #   Build     Docker     l'image se construit-elle ?
 #   Registry  GHCR       ou est-elle stockee ?
 #
-# Enchainement : lint et test partent en parallele, la qualite les attend
-# (elle a besoin de leur couverture), le build attend la qualite.
+# Chaque job matrix a ete duplique en un job par composant (frontend/backend)
+# a la demande : pas de `strategy: matrix` = pas d'etiquette "Matrix" dans le
+# graphe GitHub Actions, au prix d'un peu de repetition dans ce fichier.
 #
-#     lint ─┬─► quality ─► build + push
-#     test ─┘
+# Enchainement : les jobs qualite/tests partent en parallele, la qualite les
+# attend (elle a besoin de leur couverture), le build attend la qualite.
+#
+#     test-qualite-frontend ─┬─► quality ─► build + push
+#     test-qualite-backend ──┤
+#     test-unitaire-frontend ┤
+#     test-unitaire-backend ─┘
 #
 # Cette pipeline tourne sur les PULL REQUESTS : c'est le retour rapide pendant
-# qu'on developpe. La "Pipeline DevSecOps" reprend ces memes 4 jobs et y ajoute
+# qu'on developpe. La "Pipeline DevSecOps" reprend ces memes jobs et y ajoute
 # les tests de securite ; elle tourne a la fusion sur main.
 # ------------------------------------------------------------------------------
 
@@ -40,27 +46,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # --- Test Qualité ESLint -------------------------------------------------------
-  # `matrix` decline le meme job une fois par composant : deux machines en
-  # parallele, une pour le frontend, une pour le backend.
-  test-qualite:
-    name: Test Qualité ESLint (${{ matrix.component }})
+  # --- Test Qualité ESLint (frontend) -----------------------------------------
+  test-qualite-frontend:
+    name: Test Qualité ESLint (frontend)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false # on veut voir les erreurs des DEUX composants
-      matrix:
-        component: [frontend, backend]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: ${{ matrix.component }}/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
       - name: ESLint - analyse du style et des bonnes pratiques
         id: eslint
-        working-directory: ${{ matrix.component }}
+        working-directory: frontend
         run: |
           npm ci
           npm run lint
@@ -70,7 +70,7 @@ jobs:
         run: |
           if [ "${{ steps.eslint.outcome }}" = "success" ]; then verdict="Réussi"; else verdict="Échoué"; fi
           {
-            echo "### Test Qualité ESLint (${{ matrix.component }})"
+            echo "### Test Qualité ESLint (frontend)"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
@@ -80,31 +80,57 @@ jobs:
             echo "| Résultat | **${verdict}** |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # --- Tests - Jest (backend) / Vitest (frontend) --------------------------
-  # Le frontend utilise Vitest, pas Jest : meme facon d'ecrire les tests
-  # (describe / it / expect), mais un lanceur different, integre a Vite.
-  test-unitaire:
-    name: Test unitaire ${{ matrix.tool }} (${{ matrix.component }})
+  # --- Test Qualité ESLint (backend) ------------------------------------------
+  test-qualite-backend:
+    name: Test Qualité ESLint (backend)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - component: backend
-            tool: Jest
-          - component: frontend
-            tool: Vitest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: ${{ matrix.component }}/package-lock.json
+          cache-dependency-path: backend/package-lock.json
 
-      - name: ${{ matrix.tool }} - tests unitaires + couverture
+      - name: ESLint - analyse du style et des bonnes pratiques
+        id: eslint
+        working-directory: backend
+        run: |
+          npm ci
+          npm run lint
+
+      - name: Résumé
+        if: always()
+        run: |
+          if [ "${{ steps.eslint.outcome }}" = "success" ]; then verdict="Réussi"; else verdict="Échoué"; fi
+          {
+            echo "### Test Qualité ESLint (backend)"
+            echo ""
+            echo "| Champ | Valeur |"
+            echo "|---|---|"
+            echo "| Famille | Qualité |"
+            echo "| Outil | ESLint |"
+            echo "| Type de test / analyse | Analyse statique du code, par fichier |"
+            echo "| Résultat | **${verdict}** |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # --- Test unitaire Vitest (frontend) -----------------------------------------
+  # Le frontend utilise Vitest, pas Jest : meme facon d'ecrire les tests
+  # (describe / it / expect), mais un lanceur different, integre a Vite.
+  test-unitaire-frontend:
+    name: Test unitaire Vitest (frontend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Vitest - tests unitaires + couverture
         id: run_tests
-        working-directory: ${{ matrix.component }}
+        working-directory: frontend
         run: |
           npm ci
           npm run test:coverage
@@ -116,8 +142,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-${{ matrix.component }}
-          path: ${{ matrix.component }}/coverage/lcov.info
+          name: coverage-frontend
+          path: frontend/coverage/lcov.info
           retention-days: 1
           if-no-files-found: warn
 
@@ -126,12 +152,55 @@ jobs:
         run: |
           if [ "${{ steps.run_tests.outcome }}" = "success" ]; then verdict="Réussi"; else verdict="Échoué"; fi
           {
-            echo "### Test unitaire ${{ matrix.tool }} (${{ matrix.component }})"
+            echo "### Test unitaire Vitest (frontend)"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
             echo "| Famille | Test |"
-            echo "| Outil | ${{ matrix.tool }} |"
+            echo "| Outil | Vitest |"
+            echo "| Type de test / analyse | Test unitaire |"
+            echo "| Résultat | **${verdict}** |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # --- Test unitaire Jest (backend) --------------------------------------------
+  test-unitaire-backend:
+    name: Test unitaire Jest (backend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Jest - tests unitaires + couverture
+        id: run_tests
+        working-directory: backend
+        run: |
+          npm ci
+          npm run test:coverage
+
+      - name: Transmettre la couverture au job qualite
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-backend
+          path: backend/coverage/lcov.info
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Résumé
+        if: always()
+        run: |
+          if [ "${{ steps.run_tests.outcome }}" = "success" ]; then verdict="Réussi"; else verdict="Échoué"; fi
+          {
+            echo "### Test unitaire Jest (backend)"
+            echo ""
+            echo "| Champ | Valeur |"
+            echo "|---|---|"
+            echo "| Famille | Test |"
+            echo "| Outil | Jest |"
             echo "| Type de test / analyse | Test unitaire |"
             echo "| Résultat | **${verdict}** |"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -151,7 +220,7 @@ jobs:
   quality:
     name: Test qualité SonarQube
     runs-on: ubuntu-latest
-    needs: [test-qualite, test-unitaire]
+    needs: [test-qualite-frontend, test-qualite-backend, test-unitaire-frontend, test-unitaire-backend]
     # NON BLOQUANT pour l'instant : la qualite est MESUREE et affichee, mais un
     # mauvais score n'arrete pas la pipeline. On enlevera cette ligne le jour ou
     # l'equipe est prete a rendre le Quality Gate obligatoire.
@@ -161,8 +230,8 @@ jobs:
         with:
           fetch-depth: 0 # historique complet : Sonar s'en sert pour dater les problemes
 
-      # On recupere les deux rapports deposes par le job "test", a l'endroit
-      # exact ou sonar-project.properties les attend.
+      # On recupere les deux rapports deposes par les jobs "test-unitaire-*", a
+      # l'endroit exact ou sonar-project.properties les attend.
       - uses: actions/download-artifact@v4
         with:
           name: coverage-backend
@@ -242,7 +311,9 @@ jobs:
 
   # --- Build Docker  /  Registry - GHCR -------------------------------
   # Build et push dans le meme job : une image construite sur une machine
-  # n'existe pas sur la suivante.
+  # n'existe pas sur la suivante. Ce job GARDE son `strategy: matrix` (non
+  # concerne par le decoupage ci-dessus) : deux composants a construire, meme
+  # etape, aucune raison de dupliquer ce job.
   build:
     name: Build Docker (${{ matrix.component }})
     runs-on: ubuntu-latest
