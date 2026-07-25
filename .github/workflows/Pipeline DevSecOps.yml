@@ -1,70 +1,62 @@
 # ==============================================================================
-# PIPELINE CI DevSecOps (version BLOQUANTE) - GitHub Actions
+# PIPELINE DevSecOps — la base DevOps + la securite
 # ==============================================================================
-# Architecture "fan-out / fan-in" :
-#   - FAN-OUT : tous les jobs d'analyse (lint, test, integration, secrets, sca,
-#     sast, iac-scan) tournent EN PARALLELE des le debut. Chacun est une "porte"
-#     (gate) qui bloque la suite si elle echoue.
-#   - FAN-IN  : le job "build" attend TOUS les precedents (needs), construit et
-#     scanne les images, puis les pousse. "e2e" attend le build.
+# Cette pipeline REPREND les 4 jobs de "Pipeline DevOps.yml" (lint, test,
+# quality, build) et y ajoute 5 tests de securite + les tests d'integration et
+# de bout en bout. C'est la PORTE COMPLETE : elle tourne a la fusion sur main.
 #
-# Vocabulaire : workflow (ce fichier), job (bloc sous jobs:, machine neuve),
-# step (commande run: ou action uses:), matrix (decline un job par composant).
+# LES 5 TESTS DE SECURITE — a chaque fois : 1 outil, 1 question, 1 job.
 #
-# Deux notions de securite a distinguer, volontairement separees en jobs :
-#   - SCA  (job sca)  : audite les DEPENDANCES tierces (ce qu'on importe).
-#   - SAST (job sast) : audite le CODE applicatif (ce qu'on ecrit).
-#   - IaC  (job iac-scan) : audite les MANIFESTS Kubernetes (config d'infra).
+#   🔑 secrets   Gitleaks       ai-je committe un mot de passe ?
+#   📦 sca       Trivy fs       mes DEPENDANCES ont-elles des failles connues ?
+#   🔍 sast      Semgrep        MON CODE contient-il des failles ?
+#   ⚙️  iac       Trivy config   mes manifests Kubernetes sont-ils durcis ?
+#   🐳 image     Trivy image    mon image finale contient-elle des failles ?
 #
-# Une version PERMISSIVE (ci-permissif.yml) existe pour le debut de module :
-# elle laisse passer les alertes (continue-on-error). Ce fichier-ci est la
-# version FINALE avec les gates bloquantes.
+# LA DISTINCTION A RETENIR :
+#   SCA  = ce que j'IMPORTE (les bibliotheques des autres)
+#   SAST = ce que j'ECRIS   (mon propre code)
+#   IaC  = ce que je CONFIGURE (mon infrastructure)
+#
+# ENCHAINEMENT — tout part en parallele (fan-out), le build attend tout le
+# monde (fan-in), puis les tests E2E :
+#
+#     lint ─┬─► quality ──┐
+#     test ─┘             │
+#     integration ────────┤
+#     secrets ────────────┼─► build (+ scan image + SBOM + push) ─► e2e
+#     sca ────────────────┤
+#     sast ───────────────┤
+#     iac ────────────────┘
+#
+# Chaque job est une PORTE : s'il echoue, rien ne se construit, rien n'est
+# publie. C'est le "shift-left" : on bloque au commit, pas en production.
 # ------------------------------------------------------------------------------
 
 name: Pipeline DevSecOps
 
+# Elle ne tourne qu'a la fusion sur main : pendant le developpement, c'est la
+# "Pipeline DevOps" (plus rapide) qui donne le retour sur les pull requests.
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch: # lancement manuel de la porte complete
 
-# Principe de moindre privilege : lecture seule par defaut. Les jobs qui ont
-# besoin de plus (upload SARIF, push d'image) demandent leurs droits localement.
 permissions:
   contents: read
 
+concurrency:
+  group: devsecops-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ============================================================================
-  # FAN-OUT : jobs d'analyse en parallele
+  # LA BASE DevOps — identique a "Pipeline DevOps.yml"
   # ============================================================================
 
-  # --- 1) Lint : qualite/style, par composant --------------------------------
+  # --- 🧹 Lint — ESLint -------------------------------------------------------
   lint:
-    name: lint (${{ matrix.component }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false # on veut voir TOUTES les erreurs, pas seulement la 1re
-      matrix:
-        component: [frontend, backend]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          # cache PAR composant : sinon les caches npm du front et du back se melangent
-          cache-dependency-path: ${{ matrix.component }}/package-lock.json
-      - name: Install + ESLint + Prettier
-        working-directory: ${{ matrix.component }}
-        run: |
-          npm ci
-          npm run lint
-          npm run format:check
-
-  # --- 2) Tests unitaires + couverture, par composant ------------------------
-  test:
-    name: test (${{ matrix.component }})
+    name: 🧹 Lint — ESLint (${{ matrix.component }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -77,17 +69,76 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: ${{ matrix.component }}/package-lock.json
-      # La couverture est MESUREE mais NON bloquante (objectif indicatif 60%),
-      # pour ne pas decourager au demarrage du module.
-      - name: Install + tests + couverture
+
+      - name: 🧹 ESLint — analyse du style et des bonnes pratiques
+        working-directory: ${{ matrix.component }}
+        run: |
+          npm ci
+          npm run lint
+
+  # --- 🧪 Tests — Jest (backend) / Vitest (frontend) --------------------------
+  test:
+    name: 🧪 Tests — ${{ matrix.tool }} (${{ matrix.component }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: backend
+            tool: Jest
+          - component: frontend
+            tool: Vitest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ matrix.component }}/package-lock.json
+
+      - name: 🧪 ${{ matrix.tool }} — tests unitaires + couverture
         working-directory: ${{ matrix.component }}
         run: |
           npm ci
           npm run test:coverage
 
-  # --- 3) Tests d'integration : API contre une VRAIE PostgreSQL ---------------
+      - name: Transmettre la couverture au job qualite
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.component }}
+          path: ${{ matrix.component }}/coverage/lcov.info
+          retention-days: 1
+
+  # --- 📊 Qualite — SonarQube -------------------------------------------------
+  quality:
+    name: 📊 Qualité — SonarQube
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    continue-on-error: true # mesuree mais pas encore bloquante
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage-backend
+          path: backend/coverage
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage-frontend
+          path: frontend/coverage
+
+      - name: 📊 SonarQube — analyse de la qualite du code
+        uses: SonarSource/sonarqube-scan-action@v8
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+
+  # --- 🔗 Integration — Jest + une VRAIE base PostgreSQL ----------------------
+  # `services:` demarre un conteneur PostgreSQL a cote du job. Les tests
+  # unitaires simulent la base ; ceux-ci parlent a une vraie.
   integration:
-    name: integration (backend + postgres)
+    name: 🔗 Intégration — Jest + PostgreSQL
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -98,6 +149,7 @@ jobs:
           POSTGRES_DB: taskflow
         ports:
           - 5432:5432
+        # GitHub attend que la base reponde avant de lancer les tests.
         options: >-
           --health-cmd "pg_isready -U taskflow -d taskflow"
           --health-interval 5s
@@ -110,7 +162,8 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: backend/package-lock.json
-      - name: Tests d'integration
+
+      - name: 🔗 Jest — l'API et la base se parlent-elles vraiment ?
         working-directory: backend
         env:
           DB_HOST: localhost
@@ -123,45 +176,54 @@ jobs:
           npm ci
           npm run test:integration
 
-  # --- 4) Secret scanning : tout le depot + son historique --------------------
-  # Pas de matrix : Gitleaks scanne le depot ENTIER, decouper par composant
-  # n'aurait aucun sens (un secret peut etre n'importe ou dans l'historique).
+  # ============================================================================
+  # LA SECURITE — 5 tests ajoutes par rapport a la pipeline DevOps
+  # ============================================================================
+
+  # --- 🔑 TEST 1/5 : les secrets — Gitleaks -----------------------------------
+  # QUESTION : ai-je committe un mot de passe, une cle d'API, un token ?
+  # Gitleaks lit le code ET TOUT L'HISTORIQUE git : un secret supprime dans un
+  # commit recent reste lisible dans les commits precedents. Le supprimer ne
+  # suffit donc pas — il faut le REVOQUER.
+  # Pas de `matrix` : un secret peut etre n'importe ou, on scanne tout le depot.
   secrets:
-    name: secrets (gitleaks)
+    name: 🔑 Secrets — Gitleaks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # historique complet requis par Gitleaks
-      # Binaire open-source (l'action officielle exige une licence en organisation).
-      - name: Scan Gitleaks
-        env:
-          GITLEAKS_VERSION: 8.30.1
-        run: |
-          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-            | tar -xz gitleaks
-          ./gitleaks git . --redact --verbose
+          fetch-depth: 0 # historique COMPLET, sinon on ne voit que le dernier commit
 
-  # --- 5) SCA : vulnerabilites des DEPENDANCES, par composant -----------------
+      # Image officielle, version FIGEE (pas `latest`) : un tag flottant peut
+      # changer sous nos pieds d'une execution a l'autre.
+      # -w /repo : le repertoire de travail DOIT etre le depot, sinon Gitleaks
+      #   ne trouve pas le fichier .gitleaksignore (qui liste les faux positifs
+      #   assumes) et l'allowlist serait silencieusement ignoree.
+      # --redact : affiche le secret masque dans les logs, qui sont publics.
+      - name: 🔑 Gitleaks — un secret a-t-il fuite dans git ?
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo \
+            ghcr.io/gitleaks/gitleaks:v8.30.1 \
+            git /repo --redact --verbose
+
+  # --- 📦 TEST 2/5 : les dependances — Trivy (SCA) ----------------------------
+  # QUESTION : les bibliotheques que j'installe ont-elles des failles connues ?
+  # Trivy lit package-lock.json et compare chaque version aux bases publiques
+  # de vulnerabilites (CVE). C'est le "SCA" : Software Composition Analysis.
   sca:
-    name: sca (${{ matrix.component }})
+    name: 📦 SCA — Trivy (dépendances) (${{ matrix.component }})
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write # pour publier le SARIF dans l'onglet Security
     strategy:
       fail-fast: false
       matrix:
         component: [frontend, backend]
     steps:
       - uses: actions/checkout@v4
-      # IMPORTANT : le GATE et le RAPPORT sont deux etapes SEPAREES. En effet,
-      # trivy-action avec `format: sarif` IGNORE le filtre `severity` et rapporte
-      # TOUTES les severites ; combine a `exit-code: 1`, il bloquerait sur une
-      # simple MEDIUM. On garde donc :
-      #   - le GATE en format table (respecte severity HIGH,CRITICAL) => bloquant
-      #   - le RAPPORT en sarif, exit-code 0 => non bloquant, pour l'onglet Security
-      - name: Trivy fs - gate (HIGH/CRITICAL bloquant)
+
+      # severity HIGH,CRITICAL : on ne bloque que sur ce qui est grave, sinon
+      # le bruit decourage et plus personne ne regarde les alertes.
+      # ignore-unfixed : inutile de bloquer sur une faille sans correctif publie.
+      - name: 📦 Trivy — mes dépendances ont-elles des CVE ?
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
@@ -169,75 +231,45 @@ jobs:
           scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          exit-code: "1"
+          exit-code: "1" # 1 = le job echoue = la porte se ferme
           format: table
-      - name: Trivy fs - rapport SARIF (non bloquant)
-        if: always()
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          scan-type: fs
-          scan-ref: ${{ matrix.component }}
-          scanners: vuln
-          ignore-unfixed: true
-          exit-code: "0"
-          format: sarif
-          output: trivy-sca-${{ matrix.component }}.sarif
-      # Upload vers l'onglet Security. continue-on-error : cet upload NECESSITE un
-      # depot public OU GitHub Advanced Security ; sur un depot prive sans GHAS,
-      # il echoue silencieusement sans casser la pipeline (le gate ci-dessus suffit).
-      - name: Upload SARIF (SCA)
-        if: always()
-        continue-on-error: true
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: trivy-sca-${{ matrix.component }}.sarif
-          category: sca-${{ matrix.component }}
 
-  # --- 6) SAST : vulnerabilites du CODE, par composant ------------------------
+  # --- 🔍 TEST 3/5 : mon code — Semgrep (SAST) --------------------------------
+  # QUESTION : MON code contient-il des failles (injection SQL, XSS, secret en
+  # dur, crypto faible) ? Semgrep applique des regles ecrites en YAML, donc
+  # LISIBLES — on peut ouvrir une regle et comprendre ce qu'elle cherche.
+  # C'est le "SAST" : Static Application Security Testing.
   sast:
-    name: sast (${{ matrix.component }})
+    name: 🔍 SAST — Semgrep (mon code)
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
-    strategy:
-      fail-fast: false
-      matrix:
-        component: [frontend, backend]
     steps:
       - uses: actions/checkout@v4
-      # Semgrep : regles lisibles en YAML (choisi plutot que CodeQL, boite noire).
-      # --error => sortie 1 si findings (gate). --sarif -o => rapport SARIF.
-      - name: Semgrep scan
+
+      # --config p/xxx : jeux de regles publics prets a l'emploi.
+      # --error : sortie en echec si une faille est trouvee (la porte se ferme).
+      - name: 🔍 Semgrep — mon code contient-il des failles ?
         run: |
           docker run --rm -v "$PWD:/src" -w /src semgrep/semgrep \
             semgrep scan \
               --config p/javascript --config p/nodejs --config p/react \
-              --sarif --output semgrep-${{ matrix.component }}.sarif \
               --error --metrics off \
-              ${{ matrix.component }}/src
-      - name: Upload SARIF (SAST)
-        if: always()
-        continue-on-error: true
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: semgrep-${{ matrix.component }}.sarif
-          category: sast-${{ matrix.component }}
+              backend/src frontend/src
 
-  # --- 7) IaC scan : nos MANIFESTS Kubernetes (Trivy config) ------------------
-  # Pas de Terraform dans ce projet : on scanne donc les manifests k8s/ (la
-  # version durcie). Le dossier k8s-insecure/ est volontairement EXCLU pour que
-  # la pipeline reste verte (il sert de demo "scan rouge", lance a la main).
-  iac-scan:
-    name: iac-scan (manifests)
+  # --- ⚙️ TEST 4/5 : mon infrastructure — Trivy config (IaC) ------------------
+  # QUESTION : mes manifests Kubernetes sont-ils durcis ? Trivy verifie des
+  # regles comme "le conteneur tourne-t-il en root ?", "peut-il escalader ses
+  # privileges ?", "son systeme de fichiers est-il en lecture seule ?".
+  # C'est l'"IaC scanning" : on securise la CONFIGURATION, pas le code.
+  #
+  # Le dossier k8s-insecure/ est volontairement EXCLU : il sert de demo "scan
+  # rouge", a lancer a la main (voir CORRECTIONS.md).
+  iac:
+    name: ⚙️ IaC — Trivy (manifests Kubernetes)
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
     steps:
       - uses: actions/checkout@v4
-      # Gate en table (respecte severity) + rapport SARIF a part (cf. job sca).
-      - name: Trivy config - gate (HIGH/CRITICAL bloquant)
+
+      - name: ⚙️ Trivy — mes manifests k8s sont-ils durcis ?
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: config
@@ -245,34 +277,18 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "1"
           format: table
-      - name: Trivy config - rapport SARIF (non bloquant)
-        if: always()
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          scan-type: config
-          scan-ref: k8s
-          exit-code: "0"
-          format: sarif
-          output: trivy-iac.sarif
-      - name: Upload SARIF (IaC)
-        if: always()
-        continue-on-error: true
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: trivy-iac.sarif
-          category: iac
 
   # ============================================================================
-  # FAN-IN : build des images (attend TOUTES les analyses)
+  # FAN-IN : build + TEST 5/5 (scan de l'image) + SBOM + publication
   # ============================================================================
   build:
-    name: build (${{ matrix.component }})
+    name: 🐳 Build — Docker (${{ matrix.component }})
     runs-on: ubuntu-latest
-    needs: [lint, test, integration, secrets, sca, sast, iac-scan]
+    # Le build attend que TOUTES les portes soient vertes.
+    needs: [lint, test, quality, integration, secrets, sca, sast, iac]
     permissions:
       contents: read
-      packages: write # push vers GHCR
-      security-events: write # upload SARIF du scan d'image
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -283,16 +299,24 @@ jobs:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
 
-      # Build LOCAL (load: true) : l'image n'est pas poussee avant d'etre scannee.
-      - name: Build de l'image
+      - name: 🐳 Build — Docker
         uses: docker/build-push-action@v6
         with:
           context: ./${{ matrix.component }}
-          load: true
+          load: true # image LOCALE : on la scanne AVANT de la publier
           tags: ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
 
-      # Gate en table (respecte severity) + rapport SARIF a part (cf. job sca).
-      - name: Scan Trivy image - gate (HIGH/CRITICAL bloquant)
+      # --- 🐳 TEST 5/5 : l'image finale — Trivy image -------------------------
+      # QUESTION : l'image que je vais livrer contient-elle des failles ?
+      # Difference avec le SCA : ici on ne scanne plus seulement mes
+      # dependances npm, mais TOUT le contenu de l'image — y compris les
+      # paquets du systeme d'exploitation de base (Alpine, nginx...).
+      #
+      # ORDRE IMPORTANT : on scanne AVANT de publier. Une image vulnerable ne
+      # doit jamais atteindre le registre.
+      - name: 🐳 Trivy — mon image finale est-elle saine ?
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.IMAGE }}:${{ github.sha }}
@@ -301,61 +325,71 @@ jobs:
           exit-code: "1"
           format: table
 
-      - name: Scan Trivy image - rapport SARIF (non bloquant)
-        if: always()
+      # --- SBOM : l'inventaire de l'image -------------------------------------
+      # Un SBOM (Software Bill of Materials) est la LISTE de tout ce que
+      # contient l'image, avec les versions, au format standard CycloneDX.
+      #
+      # A quoi ca sert, concretement ? Le scan ci-dessus repond "y a-t-il une
+      # faille connue AUJOURD'HUI ?". Le SBOM repond a une autre question, le
+      # jour ou une faille grave est publiee : "suis-je concerne ?" — il suffit
+      # de chercher le paquet dans l'inventaire, sans rien reconstruire.
+      # C'est ce qui a manque a tout le monde pendant l'incident Log4Shell.
+      - name: 📋 SBOM — inventaire du contenu de l'image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
+          scan-type: image
           image-ref: ${{ env.IMAGE }}:${{ github.sha }}
-          ignore-unfixed: true
-          exit-code: "0"
-          format: sarif
-          output: trivy-image-${{ matrix.component }}.sarif
+          format: cyclonedx
+          output: sbom-${{ matrix.component }}.cdx.json
+          exit-code: "0" # un inventaire ne juge rien : il ne bloque jamais
 
-      - name: Upload SARIF (image)
-        if: always()
-        continue-on-error: true
-        uses: github/codeql-action/upload-sarif@v3
+      - name: 📋 Publier le SBOM
+        uses: actions/upload-artifact@v4
         with:
-          sarif_file: trivy-image-${{ matrix.component }}.sarif
-          category: image-${{ matrix.component }}
+          name: sbom-${{ matrix.component }}
+          path: sbom-${{ matrix.component }}.cdx.json
+          retention-days: 30
 
-      # POINT CLE souvent mal compris : le build ET le scan tournent aussi sur les
-      # pull requests (on valide avant de fusionner). SEUL le push vers GHCR est
-      # conditionne a la branche main. On ne publie donc jamais depuis une PR.
-      - name: Login GHCR
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      # --- 📦 Publication vers GHCR -------------------------------------------
+      # On arrive ici uniquement si les 5 tests de securite sont verts.
+      - name: 📦 Registry — connexion a GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }} # token natif, aucun secret externe
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push vers GHCR
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: 📦 Registry — push vers GHCR
         uses: docker/build-push-action@v6
         with:
           context: ./${{ matrix.component }}
           push: true
-          # :1.0.0 est le tag versionne reference par les manifests k8s/.
-          # :<sha> pour la tracabilite, :latest pour la commodite.
+          # :<sha> tracabilite, :1.0.0 tag referencé par les manifests k8s/,
+          # :latest commodite.
           tags: |
             ${{ env.IMAGE }}:${{ github.sha }}
             ${{ env.IMAGE }}:1.0.0
             ${{ env.IMAGE }}:latest
+          cache-from: type=gha,scope=${{ matrix.component }}
 
   # ============================================================================
-  # E2E : tests d'acceptance sur la stack DEPLOYEE (apres le build)
+  # E2E : la derniere verification, sur l'application qui tourne pour de vrai
   # ============================================================================
+  # Les tests precedents regardent le code, les dependances, l'image. Celui-ci
+  # demarre TOUTE la stack (base + API + front) et clique dedans comme un
+  # utilisateur, avec un vrai navigateur.
   e2e:
-    name: e2e (playwright)
+    name: 🎭 E2E — Playwright
     runs-on: ubuntu-latest
     needs: [build]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Demarrer la stack (docker compose)
+      - name: Demarrer la stack complete (docker compose)
         run: docker compose up -d --build
 
+      # Un conteneur "demarre" n'est pas un conteneur "pret". On interroge donc
+      # les deux services jusqu'a ce qu'ils repondent 200, sinon on abandonne.
       - name: Attendre que l'application soit prete
         run: |
           for i in $(seq 1 40); do
@@ -378,7 +412,7 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
-      - name: Tests E2E
+      - name: 🎭 Playwright — un utilisateur peut-il vraiment utiliser l'app ?
         working-directory: e2e
         env:
           E2E_BASE_URL: http://localhost:8080

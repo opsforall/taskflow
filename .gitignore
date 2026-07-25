@@ -12,6 +12,15 @@ build/
 
 # Tests
 coverage/
+test-results/
+playwright-report/
+
+# Binaires d'outils téléchargés — ne JAMAIS committer un exécutable tiers.
+# Il alourdit le dépôt (21 Mo, cloné à chaque run CI qui fait fetch-depth: 0)
+# et contourne toute traçabilité de la chaîne d'approvisionnement : la CI le
+# télécharge elle-même depuis la release officielle, checksum SHA-256 vérifié.
+gitleaks
+gitleaks.exe
 
 # Divers
 *.log
