@@ -6,3 +6,19 @@
 # On l'allowliste ici plutot que de reecrire l'historique d'un depot partage.
 # C'est le mecanisme standard pour tracer une exception assumee.
 efac9e3f973d3f9506705eb7d7f31feb79d74590:CORRECTIONS.md:stripe-access-token:98
+
+# Faux positifs documentes : la regle "curl-auth-user" detecte la syntaxe
+# `curl -u texte:texte`, sans distinguer un vrai identifiant d'une simple
+# ressemblance de forme. Deux cas dans le job "quality" (SonarQube) :
+#   - "admin:admin" : identifiants PAR DEFAUT d'une instance SonarQube
+#     Community demarree dans le MEME job, sur localhost, detruite a la fin
+#     du job. Documente publiquement par SonarSource, ne protege rien.
+#   - "${{ steps.sonar.outputs.token }}:" : une expression GitHub Actions,
+#     PAS un identifiant en dur. La vraie valeur est deja masquee via
+#     ::add-mask:: (visible en log sous la forme "***").
+66cb1259365b91224f4f6c28d6fdda07efe3f84f:.github/workflows/Pipeline DevOps.yml:curl-auth-user:163
+66cb1259365b91224f4f6c28d6fdda07efe3f84f:.github/workflows/Pipeline DevOps.yml:curl-auth-user:183
+66cb1259365b91224f4f6c28d6fdda07efe3f84f:.github/workflows/Pipeline DevOps.yml:curl-auth-user:186
+66cb1259365b91224f4f6c28d6fdda07efe3f84f:.github/workflows/Pipeline DevSecOps.yml:curl-auth-user:151
+66cb1259365b91224f4f6c28d6fdda07efe3f84f:.github/workflows/Pipeline DevSecOps.yml:curl-auth-user:168
+66cb1259365b91224f4f6c28d6fdda07efe3f84f:.github/workflows/Pipeline DevSecOps.yml:curl-auth-user:171
