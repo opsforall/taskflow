@@ -5,23 +5,28 @@
 # et y ajoute 5 tests de securite + les tests d'integration et de bout en bout.
 # C'est la PORTE COMPLETE : elle tourne a la fusion sur main.
 #
-# LES 5 TESTS DE SECURITE - a chaque fois : 1 outil, 1 question, 1 job.
+# LES 5 TESTS DE SECURITE - tous regroupes dans UN SEUL job matrix "securite"
+# (voir plus bas pourquoi), mais chacun garde 1 outil, 1 question :
 #
-#   secrets        Gitleaks       ai-je committe un mot de passe ?
-#   test-securite  Trivy fs       mes DEPENDANCES ont-elles des failles connues ?
-#   sast           Semgrep        MON CODE contient-il des failles ?
-#   iac            Trivy config   mes manifests Kubernetes sont-ils durcis ?
-#   image          Trivy image    mon image finale contient-elle des failles ?
+#   secrets   Gitleaks       ai-je committe un mot de passe ?
+#   deps      Trivy fs       mes DEPENDANCES ont-elles des failles connues ?
+#   sast      Semgrep        MON CODE contient-il des failles ?
+#   config    Trivy config   mes manifests Kubernetes sont-ils durcis ?
+#   image     Trivy image    mon image finale contient-elle des failles ? (dans build)
 #
 # LA DISTINCTION A RETENIR :
 #   SCA  = ce que j'IMPORTE (les bibliotheques des autres)
 #   SAST = ce que j'ECRIS   (mon propre code)
 #   IaC  = ce que je CONFIGURE (mon infrastructure)
 #
-# `strategy: matrix` decline test-qualite/test-unitaire/test-securite une fois
-# par composant. GitHub Actions affiche alors une carte "Matrix: <cle du job>" -
-# la cle du job porte deja le "type de test" (test-qualite, test-unitaire,
-# test-securite), donc ce prefixe reste lisible sans repeter l'info ailleurs.
+# `strategy: matrix` decline un job plusieurs fois. GitHub Actions affiche
+# alors une carte "Matrix: <cle du job>" regroupant toutes ses instances.
+# C'est le SEUL mecanisme qui permet de regrouper des jobs sous un titre
+# commun dans le graphe - c'est pourquoi les 5 tests de securite sont ecrits
+# comme UN SEUL job avec 5 instances de matrix (chaque instance ne lance
+# qu'UN SEUL outil, via `if: matrix.id == '...'` sur chaque etape), plutot que
+# 4 jobs separes. Cout du choix : les etapes sont conditionnelles au lieu
+# d'un job = un outil ; a lire avec le commentaire du job "securite" plus bas.
 #
 # `integration` a une VRAIE dependance sur les tests unitaires (needs) : inutile
 # de lancer des tests d'integration, plus lents et plus couteux (une vraie
@@ -31,11 +36,8 @@
 # ENCHAINEMENT :
 #
 #     test-qualite ─┬─► quality ────────┐
-#     test-unitaire ┴─► integration ────┤
-#     secrets ───────────────────────────┼─► build (+ scan image + SBOM + push) ─► e2e
-#     test-securite ──────────────────────┤
-#     sast ────────────────────────────────┤
-#     iac ──────────────────────────────────┘
+#     test-unitaire ┴─► integration ────┼─► build (+ scan image + SBOM + push) ─► e2e
+#     securite (5 tests) ───────────────┘
 #
 # Chaque job est une PORTE : s'il echoue, rien ne se construit, rien n'est
 # publie. C'est le "shift-left" : on bloque au commit, pas en production.
@@ -293,68 +295,65 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ============================================================================
-  # LA SECURITE - 5 tests ajoutes par rapport a la pipeline DevOps
+  # SECURITE - les 5 tests fusionnes dans UN SEUL job matrix
   # ============================================================================
-
-  # --- TEST 1/5 : les secrets - Gitleaks -----------------------------------
-  # QUESTION : ai-je committe un mot de passe, une cle d'API, un token ?
-  # Gitleaks lit le code ET TOUT L'HISTORIQUE git : un secret supprime dans un
-  # commit recent reste lisible dans les commits precedents. Le supprimer ne
-  # suffit donc pas - il faut le REVOQUER.
-  # Pas de `matrix` : un secret peut etre n'importe ou, on scanne tout le depot.
-  secrets:
-    name: Sécurité · Secrets Gitleaks
+  # Pourquoi un seul job : c'est le prix a payer pour obtenir UNE SEULE carte
+  # "Matrix: securite" dans le graphe GitHub Actions au lieu de 4 jobs epars
+  # (rappel : GitHub ne regroupe visuellement sous un titre commun QUE les
+  # jobs matrix - aucun autre mecanisme n'existe). Chaque instance du matrix
+  # ne lance qu'UN SEUL des 5 outils : chaque etape ci-dessous a un
+  # `if: matrix.id == '...'` qui la reserve a la bonne instance ; les 4 autres
+  # etapes sont "skipped" pour cette instance. C'est le compromis inverse de
+  # d'habitude : un seul job a lire au lieu de 4, mais des conditions a
+  # suivre au lieu d'un mapping direct "1 job = 1 outil".
+  securite:
+    name: ${{ matrix.label }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: secrets
+            label: Secrets Gitleaks
+            tool: Gitleaks
+          - id: deps
+            label: Dépendances Trivy fs (frontend)
+            tool: Trivy fs
+            component: frontend
+          - id: deps
+            label: Dépendances Trivy fs (backend)
+            tool: Trivy fs
+            component: backend
+          - id: sast
+            label: SAST Semgrep
+            tool: Semgrep
+          - id: config
+            label: Configuration Trivy config
+            tool: Trivy config
     steps:
+      # fetch-depth: 0 est requis par Gitleaks (historique complet) ; sans
+      # effet sur les 4 autres instances, qui n'ont besoin que du code actuel.
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # historique COMPLET, sinon on ne voit que le dernier commit
+          fetch-depth: 0
 
-      # Image officielle, version FIGEE (pas `latest`) : un tag flottant peut
-      # changer sous nos pieds d'une execution a l'autre.
-      # -w /repo : le repertoire de travail DOIT etre le depot, sinon Gitleaks
-      #   ne trouve pas le fichier .gitleaksignore (qui liste les faux positifs
-      #   assumes) et l'allowlist serait silencieusement ignoree.
-      # --redact : affiche le secret masque dans les logs, qui sont publics.
+      # --- QUESTION : ai-je committe un mot de passe, une cle d'API, un token ?
+      # Gitleaks lit le code ET TOUT L'HISTORIQUE git : un secret supprime dans
+      # un commit recent reste lisible dans les commits precedents. Le
+      # supprimer ne suffit donc pas - il faut le REVOQUER.
       - name: Gitleaks - un secret a-t-il fuite dans git ?
+        if: matrix.id == 'secrets'
         id: gitleaks
         run: |
           docker run --rm -v "$PWD:/repo" -w /repo \
             ghcr.io/gitleaks/gitleaks:v8.30.1 \
             git /repo --redact --verbose
 
-      - name: Résumé
-        if: always()
-        run: |
-          if [ "${{ steps.gitleaks.outcome }}" = "success" ]; then verdict="Aucun secret détecté"; else verdict="Secret(s) détecté(s)"; fi
-          {
-            echo "### Sécurité · Secrets Gitleaks"
-            echo ""
-            echo "| Champ | Valeur |"
-            echo "|---|---|"
-            echo "| Famille | Sécurité |"
-            echo "| Outil | Gitleaks |"
-            echo "| Résultat | **${verdict}** |"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  # --- TEST 2/5 : les dependances - Trivy (SCA) ----------------------------
-  # QUESTION : les bibliotheques que j'installe ont-elles des failles connues ?
-  # Trivy lit package-lock.json et compare chaque version aux bases publiques
-  # de vulnerabilites (CVE). C'est le "SCA" : Software Composition Analysis.
-  test-securite:
-    name: Sécurité · Dépendances Trivy fs (${{ matrix.component }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        component: [frontend, backend]
-    steps:
-      - uses: actions/checkout@v4
-
-      # severity HIGH,CRITICAL : on ne bloque que sur ce qui est grave, sinon
-      # le bruit decourage et plus personne ne regarde les alertes.
-      # ignore-unfixed : inutile de bloquer sur une faille sans correctif publie.
+      # --- QUESTION : les bibliotheques que j'installe ont-elles des failles
+      # connues ? Trivy lit package-lock.json et compare chaque version aux
+      # bases publiques de vulnerabilites (CVE). C'est le "SCA".
       - name: Trivy - mes dépendances ont-elles des CVE ?
+        if: matrix.id == 'deps'
         id: trivy_sca
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -366,34 +365,11 @@ jobs:
           exit-code: "1" # 1 = le job echoue = la porte se ferme
           format: table
 
-      - name: Résumé
-        if: always()
-        run: |
-          if [ "${{ steps.trivy_sca.outcome }}" = "success" ]; then verdict="Aucune CVE HIGH/CRITICAL"; else verdict="CVE HIGH/CRITICAL détectée(s)"; fi
-          {
-            echo "### Sécurité · Dépendances Trivy fs (${{ matrix.component }})"
-            echo ""
-            echo "| Champ | Valeur |"
-            echo "|---|---|"
-            echo "| Famille | Sécurité |"
-            echo "| Outil | Trivy fs |"
-            echo "| Résultat | **${verdict}** |"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  # --- TEST 3/5 : mon code - Semgrep (SAST) --------------------------------
-  # QUESTION : MON code contient-il des failles (injection SQL, XSS, secret en
-  # dur, crypto faible) ? Semgrep applique des regles ecrites en YAML, donc
-  # LISIBLES - on peut ouvrir une regle et comprendre ce qu'elle cherche.
-  # C'est le "SAST" : Static Application Security Testing.
-  sast:
-    name: Sécurité · SAST Semgrep
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      # --config p/xxx : jeux de regles publics prets a l'emploi.
-      # --error : sortie en echec si une faille est trouvee (la porte se ferme).
+      # --- QUESTION : MON code contient-il des failles (injection SQL, XSS,
+      # secret en dur, crypto faible) ? Semgrep applique des regles ecrites
+      # en YAML, donc LISIBLES. C'est le "SAST".
       - name: Semgrep - mon code contient-il des failles ?
+        if: matrix.id == 'sast'
         id: semgrep
         run: |
           docker run --rm -v "$PWD:/src" -w /src semgrep/semgrep \
@@ -402,35 +378,13 @@ jobs:
               --error --metrics off \
               backend/src frontend/src
 
-      - name: Résumé
-        if: always()
-        run: |
-          if [ "${{ steps.semgrep.outcome }}" = "success" ]; then verdict="Aucune faille détectée"; else verdict="Faille(s) détectée(s)"; fi
-          {
-            echo "### Sécurité · SAST Semgrep"
-            echo ""
-            echo "| Champ | Valeur |"
-            echo "|---|---|"
-            echo "| Famille | Sécurité |"
-            echo "| Outil | Semgrep |"
-            echo "| Résultat | **${verdict}** |"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  # --- TEST 4/5 : mon infrastructure - Trivy config (IaC) ------------------
-  # QUESTION : mes manifests Kubernetes sont-ils durcis ? Trivy verifie des
-  # regles comme "le conteneur tourne-t-il en root ?", "peut-il escalader ses
-  # privileges ?", "son systeme de fichiers est-il en lecture seule ?".
-  # C'est l'"IaC scanning" : on securise la CONFIGURATION, pas le code.
-  #
-  # Le dossier k8s-insecure/ est volontairement EXCLU : il sert de demo "scan
-  # rouge", a lancer a la main (voir CORRECTIONS.md).
-  iac:
-    name: Sécurité · Configuration Trivy config
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
+      # --- QUESTION : mes manifests Kubernetes sont-ils durcis ? Trivy
+      # verifie des regles comme "le conteneur tourne-t-il en root ?". C'est
+      # l'"IaC scanning" : on securise la CONFIGURATION, pas le code.
+      # Le dossier k8s-insecure/ est volontairement EXCLU (demo "scan rouge",
+      # a lancer a la main - voir CORRECTIONS.md).
       - name: Trivy - mes manifests k8s sont-ils durcis ?
+        if: matrix.id == 'config'
         id: trivy_iac
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -440,17 +394,24 @@ jobs:
           exit-code: "1"
           format: table
 
+      # Une seule des 4 etapes ci-dessus s'est reellement executee pour cette
+      # instance ; les 3 autres valent "skipped". On retient la seule qui
+      # n'est pas "skipped".
       - name: Résumé
         if: always()
         run: |
-          if [ "${{ steps.trivy_iac.outcome }}" = "success" ]; then verdict="Manifests conformes"; else verdict="Non-conformité(s) détectée(s)"; fi
+          outcome=""
+          for o in "${{ steps.gitleaks.outcome }}" "${{ steps.trivy_sca.outcome }}" "${{ steps.semgrep.outcome }}" "${{ steps.trivy_iac.outcome }}"; do
+            if [ "$o" != "skipped" ] && [ -n "$o" ]; then outcome="$o"; fi
+          done
+          if [ "$outcome" = "success" ]; then verdict="Réussi"; else verdict="Échoué"; fi
           {
-            echo "### Sécurité · Configuration Trivy config"
+            echo "### ${{ matrix.label }}"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
             echo "| Famille | Sécurité |"
-            echo "| Outil | Trivy config |"
+            echo "| Outil | ${{ matrix.tool }} |"
             echo "| Résultat | **${verdict}** |"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -461,7 +422,7 @@ jobs:
     name: Build Docker (${{ matrix.component }})
     runs-on: ubuntu-latest
     # Le build attend que TOUTES les portes soient vertes.
-    needs: [test-qualite, test-unitaire, quality, integration, secrets, test-securite, sast, iac]
+    needs: [test-qualite, test-unitaire, quality, integration, securite]
     permissions:
       contents: read
       packages: write
