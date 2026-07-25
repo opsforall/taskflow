@@ -55,9 +55,9 @@ jobs:
   # LA BASE DevOps - identique a "Pipeline DevOps.yml"
   # ============================================================================
 
-  # --- Test Qualité — ESLint -------------------------------------------------------
-  lint:
-    name: Test Qualité — ESLint (${{ matrix.component }})
+  # --- Test Qualité ESLint -------------------------------------------------------
+  test-qualite:
+    name: Test Qualité ESLint (${{ matrix.component }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -83,7 +83,7 @@ jobs:
         run: |
           if [ "${{ steps.eslint.outcome }}" = "success" ]; then verdict="Réussi"; else verdict="Échoué"; fi
           {
-            echo "### Test Qualité — ESLint (${{ matrix.component }})"
+            echo "### Test Qualité ESLint (${{ matrix.component }})"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
@@ -94,8 +94,8 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   # --- Tests - Jest (backend) / Vitest (frontend) --------------------------
-  test:
-    name: Test unitaire — ${{ matrix.tool }} (${{ matrix.component }})
+  test-unitaire:
+    name: Test unitaire ${{ matrix.tool }} (${{ matrix.component }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -134,7 +134,7 @@ jobs:
         run: |
           if [ "${{ steps.run_tests.outcome }}" = "success" ]; then verdict="Réussi"; else verdict="Échoué"; fi
           {
-            echo "### Test unitaire — ${{ matrix.tool }} (${{ matrix.component }})"
+            echo "### Test unitaire ${{ matrix.tool }} (${{ matrix.component }})"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
@@ -148,9 +148,9 @@ jobs:
   # Serveur SonarQube JETABLE demarre dans le job : zero compte, zero secret.
   # Les explications detaillees sont dans "Pipeline DevOps.yml" (meme job).
   quality:
-    name: Test qualité — SonarQube
+    name: Test qualité SonarQube
     runs-on: ubuntu-latest
-    needs: [lint, test]
+    needs: [test-qualite, test-unitaire]
     continue-on-error: true # mesuree mais pas encore bloquante
     steps:
       - uses: actions/checkout@v4
@@ -207,7 +207,7 @@ jobs:
             "http://localhost:9000/api/qualitygates/project_status?projectKey=taskflow" \
             | jq -r .projectStatus.status)
           {
-            echo "### Test qualité — SonarQube"
+            echo "### Test qualité SonarQube"
             echo ""
             echo "| Mesure | Valeur |"
             echo "|---|---|"
@@ -227,7 +227,7 @@ jobs:
   # `services:` demarre un conteneur PostgreSQL a cote du job. Les tests
   # unitaires simulent la base ; ceux-ci parlent a une vraie.
   integration:
-    name: Test d'intégration — Jest + PostgreSQL
+    name: Test d'intégration Jest + PostgreSQL
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -271,7 +271,7 @@ jobs:
         run: |
           if [ "${{ steps.jest_integration.outcome }}" = "success" ]; then verdict="Réussi"; else verdict="Échoué"; fi
           {
-            echo "### Test d'intégration — Jest + PostgreSQL"
+            echo "### Test d'intégration Jest + PostgreSQL"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
@@ -292,7 +292,7 @@ jobs:
   # suffit donc pas - il faut le REVOQUER.
   # Pas de `matrix` : un secret peut etre n'importe ou, on scanne tout le depot.
   secrets:
-    name: Sécurité · Secrets — Gitleaks
+    name: Sécurité · Secrets Gitleaks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -317,7 +317,7 @@ jobs:
         run: |
           if [ "${{ steps.gitleaks.outcome }}" = "success" ]; then verdict="Aucun secret détecté"; else verdict="Secret(s) détecté(s)"; fi
           {
-            echo "### Sécurité · Secrets — Gitleaks"
+            echo "### Sécurité · Secrets Gitleaks"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
@@ -331,8 +331,8 @@ jobs:
   # QUESTION : les bibliotheques que j'installe ont-elles des failles connues ?
   # Trivy lit package-lock.json et compare chaque version aux bases publiques
   # de vulnerabilites (CVE). C'est le "SCA" : Software Composition Analysis.
-  sca:
-    name: Sécurité · Dépendances — Trivy fs (${{ matrix.component }})
+  test-securite:
+    name: Sécurité · Dépendances Trivy fs (${{ matrix.component }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -361,7 +361,7 @@ jobs:
         run: |
           if [ "${{ steps.trivy_sca.outcome }}" = "success" ]; then verdict="Aucune CVE HIGH/CRITICAL"; else verdict="CVE HIGH/CRITICAL détectée(s)"; fi
           {
-            echo "### Sécurité · Dépendances — Trivy fs (${{ matrix.component }})"
+            echo "### Sécurité · Dépendances Trivy fs (${{ matrix.component }})"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
@@ -377,7 +377,7 @@ jobs:
   # LISIBLES - on peut ouvrir une regle et comprendre ce qu'elle cherche.
   # C'est le "SAST" : Static Application Security Testing.
   sast:
-    name: Sécurité · SAST — Semgrep
+    name: Sécurité · SAST Semgrep
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -398,7 +398,7 @@ jobs:
         run: |
           if [ "${{ steps.semgrep.outcome }}" = "success" ]; then verdict="Aucune faille détectée"; else verdict="Faille(s) détectée(s)"; fi
           {
-            echo "### Sécurité · SAST — Semgrep"
+            echo "### Sécurité · SAST Semgrep"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
@@ -417,7 +417,7 @@ jobs:
   # Le dossier k8s-insecure/ est volontairement EXCLU : il sert de demo "scan
   # rouge", a lancer a la main (voir CORRECTIONS.md).
   iac:
-    name: Sécurité · Configuration — Trivy config
+    name: Sécurité · Configuration Trivy config
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -437,7 +437,7 @@ jobs:
         run: |
           if [ "${{ steps.trivy_iac.outcome }}" = "success" ]; then verdict="Manifests conformes"; else verdict="Non-conformité(s) détectée(s)"; fi
           {
-            echo "### Sécurité · Configuration — Trivy config"
+            echo "### Sécurité · Configuration Trivy config"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
@@ -451,10 +451,10 @@ jobs:
   # FAN-IN : build + TEST 5/5 (scan de l'image) + SBOM + publication
   # ============================================================================
   build:
-    name: Build — Docker (${{ matrix.component }})
+    name: Build Docker (${{ matrix.component }})
     runs-on: ubuntu-latest
     # Le build attend que TOUTES les portes soient vertes.
-    needs: [lint, test, quality, integration, secrets, sca, sast, iac]
+    needs: [test-qualite, test-unitaire, quality, integration, secrets, test-securite, sast, iac]
     permissions:
       contents: read
       packages: write
@@ -468,7 +468,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
 
-      - name: Build — Docker
+      - name: Build Docker
         id: docker_build
         uses: docker/build-push-action@v6
         with:
@@ -559,7 +559,7 @@ jobs:
             *) push="échec" ;;
           esac
           {
-            echo "### Build — Docker (${{ matrix.component }})"
+            echo "### Build Docker (${{ matrix.component }})"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
@@ -579,7 +579,7 @@ jobs:
   # demarre TOUTE la stack (base + API + front) et clique dedans comme un
   # utilisateur, avec un vrai navigateur.
   e2e:
-    name: Test e2e — Playwright
+    name: Test e2e Playwright
     runs-on: ubuntu-latest
     needs: [build]
     steps:
@@ -624,7 +624,7 @@ jobs:
         run: |
           if [ "${{ steps.playwright.outcome }}" = "success" ]; then verdict="Réussi"; else verdict="Échoué"; fi
           {
-            echo "### Test e2e — Playwright"
+            echo "### Test e2e Playwright"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"

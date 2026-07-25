@@ -40,11 +40,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # --- Test Qualité — ESLint -------------------------------------------------------
+  # --- Test Qualité ESLint -------------------------------------------------------
   # `matrix` decline le meme job une fois par composant : deux machines en
   # parallele, une pour le frontend, une pour le backend.
-  lint:
-    name: Test Qualité — ESLint (${{ matrix.component }})
+  test-qualite:
+    name: Test Qualité ESLint (${{ matrix.component }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false # on veut voir les erreurs des DEUX composants
@@ -70,7 +70,7 @@ jobs:
         run: |
           if [ "${{ steps.eslint.outcome }}" = "success" ]; then verdict="Réussi"; else verdict="Échoué"; fi
           {
-            echo "### Test Qualité — ESLint (${{ matrix.component }})"
+            echo "### Test Qualité ESLint (${{ matrix.component }})"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
@@ -83,8 +83,8 @@ jobs:
   # --- Tests - Jest (backend) / Vitest (frontend) --------------------------
   # Le frontend utilise Vitest, pas Jest : meme facon d'ecrire les tests
   # (describe / it / expect), mais un lanceur different, integre a Vite.
-  test:
-    name: Test unitaire — ${{ matrix.tool }} (${{ matrix.component }})
+  test-unitaire:
+    name: Test unitaire ${{ matrix.tool }} (${{ matrix.component }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -126,7 +126,7 @@ jobs:
         run: |
           if [ "${{ steps.run_tests.outcome }}" = "success" ]; then verdict="Réussi"; else verdict="Échoué"; fi
           {
-            echo "### Test unitaire — ${{ matrix.tool }} (${{ matrix.component }})"
+            echo "### Test unitaire ${{ matrix.tool }} (${{ matrix.component }})"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
@@ -149,9 +149,9 @@ jobs:
   #   docker run -d -p 9000:9000 -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
   #     sonarqube:26.7.0.124771-community        (puis http://localhost:9000)
   quality:
-    name: Test qualité — SonarQube
+    name: Test qualité SonarQube
     runs-on: ubuntu-latest
-    needs: [lint, test]
+    needs: [test-qualite, test-unitaire]
     # NON BLOQUANT pour l'instant : la qualite est MESUREE et affichee, mais un
     # mauvais score n'arrete pas la pipeline. On enlevera cette ligne le jour ou
     # l'equipe est prete a rendre le Quality Gate obligatoire.
@@ -224,7 +224,7 @@ jobs:
             "http://localhost:9000/api/qualitygates/project_status?projectKey=taskflow" \
             | jq -r .projectStatus.status)
           {
-            echo "### Test qualité — SonarQube"
+            echo "### Test qualité SonarQube"
             echo ""
             echo "| Mesure | Valeur |"
             echo "|---|---|"
@@ -240,11 +240,11 @@ jobs:
             echo "| Lignes de code | $(get ncloc) |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # --- Build — Docker  /  Registry - GHCR -------------------------------
+  # --- Build Docker  /  Registry - GHCR -------------------------------
   # Build et push dans le meme job : une image construite sur une machine
   # n'existe pas sur la suivante.
   build:
-    name: Build — Docker (${{ matrix.component }})
+    name: Build Docker (${{ matrix.component }})
     runs-on: ubuntu-latest
     needs: [quality]
     permissions:
@@ -260,7 +260,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
 
-      - name: Build — Docker
+      - name: Build Docker
         id: docker_build
         uses: docker/build-push-action@v6
         with:
@@ -304,7 +304,7 @@ jobs:
             *) push="échec" ;;
           esac
           {
-            echo "### Build — Docker (${{ matrix.component }})"
+            echo "### Build Docker (${{ matrix.component }})"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
