@@ -84,7 +84,7 @@ jobs:
   # Le frontend utilise Vitest, pas Jest : meme facon d'ecrire les tests
   # (describe / it / expect), mais un lanceur different, integre a Vite.
   test:
-    name: Tests - ${{ matrix.tool }} (${{ matrix.component }})
+    name: Test unitaire - ${{ matrix.tool }} (${{ matrix.component }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -126,7 +126,7 @@ jobs:
         run: |
           if [ "${{ steps.run_tests.outcome }}" = "success" ]; then verdict="Réussi"; else verdict="Échoué"; fi
           {
-            echo "### Tests - ${{ matrix.tool }} (${{ matrix.component }})"
+            echo "### Test unitaire - ${{ matrix.tool }} (${{ matrix.component }})"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
@@ -149,7 +149,7 @@ jobs:
   #   docker run -d -p 9000:9000 -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
   #     sonarqube:26.7.0.124771-community        (puis http://localhost:9000)
   quality:
-    name: Qualité - SonarQube
+    name: Test qualité - SonarQube
     runs-on: ubuntu-latest
     needs: [lint, test]
     # NON BLOQUANT pour l'instant : la qualite est MESUREE et affichee, mais un
@@ -224,7 +224,7 @@ jobs:
             "http://localhost:9000/api/qualitygates/project_status?projectKey=taskflow" \
             | jq -r .projectStatus.status)
           {
-            echo "### Qualité - SonarQube"
+            echo "### Test qualité - SonarQube"
             echo ""
             echo "| Mesure | Valeur |"
             echo "|---|---|"
