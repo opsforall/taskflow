@@ -57,7 +57,7 @@ jobs:
 
   # --- 🧹 Lint — ESLint -------------------------------------------------------
   lint:
-    name: 🧹 Lint — ESLint (${{ matrix.component }})
+    name: Lint — ESLint (${{ matrix.component }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -71,7 +71,7 @@ jobs:
           cache: npm
           cache-dependency-path: ${{ matrix.component }}/package-lock.json
 
-      - name: 🧹 ESLint — analyse du style et des bonnes pratiques
+      - name: ESLint — analyse du style et des bonnes pratiques
         id: eslint
         working-directory: ${{ matrix.component }}
         run: |
@@ -83,17 +83,19 @@ jobs:
         run: |
           if [ "${{ steps.eslint.outcome }}" = "success" ]; then icon="✅"; verdict="Réussi"; else icon="❌"; verdict="Échoué"; fi
           {
-            echo "### 🧹 Lint — ESLint (${{ matrix.component }})"
+            echo "### Lint — ESLint (${{ matrix.component }})"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
+            echo "| Famille | Qualité |"
+            echo "| Outil | ESLint |"
+            echo "| Type de test / analyse | Analyse statique du code, par fichier |"
             echo "| Résultat | ${icon} **${verdict}** |"
-            echo "| Question | Mon code respecte-t-il les règles d'écriture ? |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # --- 🧪 Tests — Jest (backend) / Vitest (frontend) --------------------------
   test:
-    name: 🧪 Tests — ${{ matrix.tool }} (${{ matrix.component }})
+    name: Tests — ${{ matrix.tool }} (${{ matrix.component }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -111,7 +113,7 @@ jobs:
           cache: npm
           cache-dependency-path: ${{ matrix.component }}/package-lock.json
 
-      - name: 🧪 ${{ matrix.tool }} — tests unitaires + couverture
+      - name: ${{ matrix.tool }} — tests unitaires + couverture
         id: run_tests
         working-directory: ${{ matrix.component }}
         run: |
@@ -132,19 +134,21 @@ jobs:
         run: |
           if [ "${{ steps.run_tests.outcome }}" = "success" ]; then icon="✅"; verdict="Réussi"; else icon="❌"; verdict="Échoué"; fi
           {
-            echo "### 🧪 Tests — ${{ matrix.tool }} (${{ matrix.component }})"
+            echo "### Tests — ${{ matrix.tool }} (${{ matrix.component }})"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
+            echo "| Famille | Test |"
+            echo "| Outil | ${{ matrix.tool }} |"
+            echo "| Type de test / analyse | Test unitaire |"
             echo "| Résultat | ${icon} **${verdict}** |"
-            echo "| Question | Ma logique fonctionne-t-elle ? |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # --- 📊 Qualite — SonarQube -------------------------------------------------
   # Serveur SonarQube JETABLE demarre dans le job : zero compte, zero secret.
   # Les explications detaillees sont dans "Pipeline DevOps.yml" (meme job).
   quality:
-    name: 📊 Qualité — SonarQube
+    name: Qualité — SonarQube
     runs-on: ubuntu-latest
     needs: [lint, test]
     continue-on-error: true # mesuree mais pas encore bloquante
@@ -185,7 +189,7 @@ jobs:
           echo "::add-mask::$token"
           echo "token=$token" >> "$GITHUB_OUTPUT"
 
-      - name: 📊 SonarQube — analyse de la qualite du code
+      - name: SonarQube — analyse de la qualite du code
         uses: SonarSource/sonarqube-scan-action@v8
         env:
           SONAR_TOKEN: ${{ steps.sonar.outputs.token }}
@@ -203,10 +207,13 @@ jobs:
             "http://localhost:9000/api/qualitygates/project_status?projectKey=taskflow" \
             | jq -r .projectStatus.status)
           {
-            echo "### 📊 Qualité — SonarQube"
+            echo "### Qualité — SonarQube"
             echo ""
             echo "| Mesure | Valeur |"
             echo "|---|---|"
+            echo "| Famille | Qualité |"
+            echo "| Outil | SonarQube |"
+            echo "| Type de test / analyse | Analyse de qualité globale du projet, Quality Gate |"
             echo "| Quality Gate | **${gate}** |"
             echo "| Bugs | $(get bugs) |"
             echo "| Vulnérabilités | $(get vulnerabilities) |"
@@ -220,7 +227,7 @@ jobs:
   # `services:` demarre un conteneur PostgreSQL a cote du job. Les tests
   # unitaires simulent la base ; ceux-ci parlent a une vraie.
   integration:
-    name: 🔗 Intégration — Jest + PostgreSQL
+    name: Intégration — Jest + PostgreSQL
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -245,7 +252,7 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
 
-      - name: 🔗 Jest — l'API et la base se parlent-elles vraiment ?
+      - name: Jest — l'API et la base se parlent-elles vraiment ?
         id: jest_integration
         working-directory: backend
         env:
@@ -268,8 +275,10 @@ jobs:
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
+            echo "| Famille | Test |"
+            echo "| Outil | Jest + PostgreSQL |"
+            echo "| Type de test / analyse | Test d'intégration |"
             echo "| Résultat | ${icon} **${verdict}** |"
-            echo "| Question | L'API et la base se parlent-elles vraiment ? |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ============================================================================
@@ -283,7 +292,7 @@ jobs:
   # suffit donc pas — il faut le REVOQUER.
   # Pas de `matrix` : un secret peut etre n'importe ou, on scanne tout le depot.
   secrets:
-    name: 🔑 Secrets — Gitleaks
+    name: Secrets — Gitleaks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -296,7 +305,7 @@ jobs:
       #   ne trouve pas le fichier .gitleaksignore (qui liste les faux positifs
       #   assumes) et l'allowlist serait silencieusement ignoree.
       # --redact : affiche le secret masque dans les logs, qui sont publics.
-      - name: 🔑 Gitleaks — un secret a-t-il fuite dans git ?
+      - name: Gitleaks — un secret a-t-il fuite dans git ?
         id: gitleaks
         run: |
           docker run --rm -v "$PWD:/repo" -w /repo \
@@ -312,8 +321,10 @@ jobs:
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
+            echo "| Famille | Sécurité |"
+            echo "| Outil | Gitleaks |"
+            echo "| Type de test / analyse | Détection de secrets commités |"
             echo "| Résultat | ${icon} **${verdict}** |"
-            echo "| Question | Ai-je committé un mot de passe ? |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # --- 📦 TEST 2/5 : les dependances — Trivy (SCA) ----------------------------
@@ -321,7 +332,7 @@ jobs:
   # Trivy lit package-lock.json et compare chaque version aux bases publiques
   # de vulnerabilites (CVE). C'est le "SCA" : Software Composition Analysis.
   sca:
-    name: 📦 SCA — Trivy (dépendances) (${{ matrix.component }})
+    name: SCA — Trivy (dépendances) (${{ matrix.component }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -333,7 +344,7 @@ jobs:
       # severity HIGH,CRITICAL : on ne bloque que sur ce qui est grave, sinon
       # le bruit decourage et plus personne ne regarde les alertes.
       # ignore-unfixed : inutile de bloquer sur une faille sans correctif publie.
-      - name: 📦 Trivy — mes dépendances ont-elles des CVE ?
+      - name: Trivy — mes dépendances ont-elles des CVE ?
         id: trivy_sca
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -350,12 +361,14 @@ jobs:
         run: |
           if [ "${{ steps.trivy_sca.outcome }}" = "success" ]; then icon="✅"; verdict="Aucune CVE HIGH/CRITICAL"; else icon="❌"; verdict="CVE HIGH/CRITICAL détectée(s)"; fi
           {
-            echo "### 📦 SCA — Trivy (dépendances) (${{ matrix.component }})"
+            echo "### SCA — Trivy (dépendances) (${{ matrix.component }})"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
+            echo "| Famille | Sécurité |"
+            echo "| Outil | Trivy fs |"
+            echo "| Type de test / analyse | Analyse des dépendances (composants) |"
             echo "| Résultat | ${icon} **${verdict}** |"
-            echo "| Question | Mes dépendances ont-elles des failles connues ? |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # --- 🔍 TEST 3/5 : mon code — Semgrep (SAST) --------------------------------
@@ -364,14 +377,14 @@ jobs:
   # LISIBLES — on peut ouvrir une regle et comprendre ce qu'elle cherche.
   # C'est le "SAST" : Static Application Security Testing.
   sast:
-    name: 🔍 SAST — Semgrep (mon code)
+    name: SAST — Semgrep (mon code)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       # --config p/xxx : jeux de regles publics prets a l'emploi.
       # --error : sortie en echec si une faille est trouvee (la porte se ferme).
-      - name: 🔍 Semgrep — mon code contient-il des failles ?
+      - name: Semgrep — mon code contient-il des failles ?
         id: semgrep
         run: |
           docker run --rm -v "$PWD:/src" -w /src semgrep/semgrep \
@@ -385,12 +398,14 @@ jobs:
         run: |
           if [ "${{ steps.semgrep.outcome }}" = "success" ]; then icon="✅"; verdict="Aucune faille détectée"; else icon="❌"; verdict="Faille(s) détectée(s)"; fi
           {
-            echo "### 🔍 SAST — Semgrep (mon code)"
+            echo "### SAST — Semgrep (mon code)"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
+            echo "| Famille | Sécurité |"
+            echo "| Outil | Semgrep |"
+            echo "| Type de test / analyse | Analyse statique de sécurité du code applicatif |"
             echo "| Résultat | ${icon} **${verdict}** |"
-            echo "| Question | Mon code contient-il des failles ? |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # --- ⚙️ TEST 4/5 : mon infrastructure — Trivy config (IaC) ------------------
@@ -402,12 +417,12 @@ jobs:
   # Le dossier k8s-insecure/ est volontairement EXCLU : il sert de demo "scan
   # rouge", a lancer a la main (voir CORRECTIONS.md).
   iac:
-    name: ⚙️ IaC — Trivy (manifests Kubernetes)
+    name: IaC — Trivy (manifests Kubernetes)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: ⚙️ Trivy — mes manifests k8s sont-ils durcis ?
+      - name: Trivy — mes manifests k8s sont-ils durcis ?
         id: trivy_iac
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -422,19 +437,21 @@ jobs:
         run: |
           if [ "${{ steps.trivy_iac.outcome }}" = "success" ]; then icon="✅"; verdict="Manifests conformes"; else icon="❌"; verdict="Non-conformité(s) détectée(s)"; fi
           {
-            echo "### ⚙️ IaC — Trivy (manifests Kubernetes)"
+            echo "### IaC — Trivy (manifests Kubernetes)"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
+            echo "| Famille | Sécurité |"
+            echo "| Outil | Trivy config |"
+            echo "| Type de test / analyse | Scan des mauvaises configurations (Dockerfiles, manifests K8s) |"
             echo "| Résultat | ${icon} **${verdict}** |"
-            echo "| Question | Mes manifests Kubernetes sont-ils durcis ? |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ============================================================================
   # FAN-IN : build + TEST 5/5 (scan de l'image) + SBOM + publication
   # ============================================================================
   build:
-    name: 🐳 Build — Docker (${{ matrix.component }})
+    name: Build — Docker (${{ matrix.component }})
     runs-on: ubuntu-latest
     # Le build attend que TOUTES les portes soient vertes.
     needs: [lint, test, quality, integration, secrets, sca, sast, iac]
@@ -451,7 +468,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
 
-      - name: 🐳 Build — Docker
+      - name: Build — Docker
         id: docker_build
         uses: docker/build-push-action@v6
         with:
@@ -469,7 +486,7 @@ jobs:
       #
       # ORDRE IMPORTANT : on scanne AVANT de publier. Une image vulnerable ne
       # doit jamais atteindre le registre.
-      - name: 🐳 Trivy — mon image finale est-elle saine ?
+      - name: Trivy — mon image finale est-elle saine ?
         id: trivy_image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -488,7 +505,7 @@ jobs:
       # jour ou une faille grave est publiee : "suis-je concerne ?" — il suffit
       # de chercher le paquet dans l'inventaire, sans rien reconstruire.
       # C'est ce qui a manque a tout le monde pendant l'incident Log4Shell.
-      - name: 📋 SBOM — inventaire du contenu de l'image
+      - name: SBOM — inventaire du contenu de l'image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: image
@@ -497,7 +514,7 @@ jobs:
           output: sbom-${{ matrix.component }}.cdx.json
           exit-code: "0" # un inventaire ne juge rien : il ne bloque jamais
 
-      - name: 📋 Publier le SBOM
+      - name: Publier le SBOM
         uses: actions/upload-artifact@v4
         with:
           name: sbom-${{ matrix.component }}
@@ -506,14 +523,14 @@ jobs:
 
       # --- 📦 Publication vers GHCR -------------------------------------------
       # On arrive ici uniquement si les 5 tests de securite sont verts.
-      - name: 📦 Registry — connexion a GHCR
+      - name: Registry — connexion a GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 📦 Registry — push vers GHCR
+      - name: Registry — push vers GHCR
         id: registry_push
         uses: docker/build-push-action@v6
         with:
@@ -546,6 +563,9 @@ jobs:
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
+            echo "| Famille | Build |"
+            echo "| Outil | Docker |"
+            echo "| Type de test / analyse | Construction de l'image conteneur |"
             echo "| Build | ${build_icon} **${build_verdict}** |"
             echo "| Scan image (Trivy) | ${scan_icon} **${scan_verdict}** |"
             echo "| SBOM | ${components} composants inventoriés |"
@@ -608,8 +628,10 @@ jobs:
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
+            echo "| Famille | Test |"
+            echo "| Outil | Playwright |"
+            echo "| Type de test / analyse | Test de bout en bout (acceptance) |"
             echo "| Résultat | ${icon} **${verdict}** |"
-            echo "| Question | Un utilisateur peut-il vraiment utiliser l'app ? |"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Logs de la stack (si echec)

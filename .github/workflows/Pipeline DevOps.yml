@@ -44,7 +44,7 @@ jobs:
   # `matrix` decline le meme job une fois par composant : deux machines en
   # parallele, une pour le frontend, une pour le backend.
   lint:
-    name: 🧹 Lint — ESLint (${{ matrix.component }})
+    name: Lint — ESLint (${{ matrix.component }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false # on veut voir les erreurs des DEUX composants
@@ -58,7 +58,7 @@ jobs:
           cache: npm
           cache-dependency-path: ${{ matrix.component }}/package-lock.json
 
-      - name: 🧹 ESLint — analyse du style et des bonnes pratiques
+      - name: ESLint — analyse du style et des bonnes pratiques
         id: eslint
         working-directory: ${{ matrix.component }}
         run: |
@@ -70,19 +70,21 @@ jobs:
         run: |
           if [ "${{ steps.eslint.outcome }}" = "success" ]; then icon="✅"; verdict="Réussi"; else icon="❌"; verdict="Échoué"; fi
           {
-            echo "### 🧹 Lint — ESLint (${{ matrix.component }})"
+            echo "### Lint — ESLint (${{ matrix.component }})"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
+            echo "| Famille | Qualité |"
+            echo "| Outil | ESLint |"
+            echo "| Type de test / analyse | Analyse statique du code, par fichier |"
             echo "| Résultat | ${icon} **${verdict}** |"
-            echo "| Question | Mon code respecte-t-il les règles d'écriture ? |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # --- 🧪 Tests — Jest (backend) / Vitest (frontend) --------------------------
   # Le frontend utilise Vitest, pas Jest : meme facon d'ecrire les tests
   # (describe / it / expect), mais un lanceur different, integre a Vite.
   test:
-    name: 🧪 Tests — ${{ matrix.tool }} (${{ matrix.component }})
+    name: Tests — ${{ matrix.tool }} (${{ matrix.component }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -100,7 +102,7 @@ jobs:
           cache: npm
           cache-dependency-path: ${{ matrix.component }}/package-lock.json
 
-      - name: 🧪 ${{ matrix.tool }} — tests unitaires + couverture
+      - name: ${{ matrix.tool }} — tests unitaires + couverture
         id: run_tests
         working-directory: ${{ matrix.component }}
         run: |
@@ -124,12 +126,14 @@ jobs:
         run: |
           if [ "${{ steps.run_tests.outcome }}" = "success" ]; then icon="✅"; verdict="Réussi"; else icon="❌"; verdict="Échoué"; fi
           {
-            echo "### 🧪 Tests — ${{ matrix.tool }} (${{ matrix.component }})"
+            echo "### Tests — ${{ matrix.tool }} (${{ matrix.component }})"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
+            echo "| Famille | Test |"
+            echo "| Outil | ${{ matrix.tool }} |"
+            echo "| Type de test / analyse | Test unitaire |"
             echo "| Résultat | ${icon} **${verdict}** |"
-            echo "| Question | Ma logique fonctionne-t-elle ? |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # --- 📊 Qualite — SonarQube -------------------------------------------------
@@ -145,7 +149,7 @@ jobs:
   #   docker run -d -p 9000:9000 -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
   #     sonarqube:26.7.0.124771-community        (puis http://localhost:9000)
   quality:
-    name: 📊 Qualité — SonarQube
+    name: Qualité — SonarQube
     runs-on: ubuntu-latest
     needs: [lint, test]
     # NON BLOQUANT pour l'instant : la qualite est MESUREE et affichee, mais un
@@ -201,7 +205,7 @@ jobs:
 
       # qualitygate.wait : le scanner attend le verdict du Quality Gate et
       # sort en erreur s'il est rouge (rendu non bloquant par continue-on-error).
-      - name: 📊 SonarQube — analyse de la qualite du code
+      - name: SonarQube — analyse de la qualite du code
         uses: SonarSource/sonarqube-scan-action@v8
         env:
           SONAR_TOKEN: ${{ steps.sonar.outputs.token }}
@@ -220,10 +224,13 @@ jobs:
             "http://localhost:9000/api/qualitygates/project_status?projectKey=taskflow" \
             | jq -r .projectStatus.status)
           {
-            echo "### 📊 Qualité — SonarQube"
+            echo "### Qualité — SonarQube"
             echo ""
             echo "| Mesure | Valeur |"
             echo "|---|---|"
+            echo "| Famille | Qualité |"
+            echo "| Outil | SonarQube |"
+            echo "| Type de test / analyse | Analyse de qualité globale du projet, Quality Gate |"
             echo "| Quality Gate | **${gate}** |"
             echo "| Bugs | $(get bugs) |"
             echo "| Vulnérabilités | $(get vulnerabilities) |"
@@ -301,6 +308,9 @@ jobs:
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
+            echo "| Famille | Build |"
+            echo "| Outil | Docker |"
+            echo "| Type de test / analyse | Construction de l'image conteneur |"
             echo "| Build | ${build_icon} **${build_verdict}** |"
             echo "| Image | \`${{ env.IMAGE }}:${{ github.sha }}\` |"
             echo "| Publication GHCR | ${push} |"
