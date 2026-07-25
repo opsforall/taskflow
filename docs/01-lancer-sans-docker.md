@@ -17,10 +17,15 @@ les bonnes versions elle-même. « Ça marche sur ma machine » commence ici.
 
 Ouvre un terminal psql (ou pgAdmin) et crée l'utilisateur et la base :
 
+
+![Création de l'utilisateur et de la base dans psql](psql.png)
+
 ```sql
 CREATE USER taskflow WITH PASSWORD 'taskflow';
 CREATE DATABASE taskflow OWNER taskflow;
 ```
+
+
 
 Pas besoin de créer les tables : le backend crée son schéma tout seul au
 premier démarrage (fichier `backend/src/db.js`).
