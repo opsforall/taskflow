@@ -23,7 +23,7 @@
 name: Pipeline DevOps
 
 on:
-  pull_request:
+  push:
     branches: [main]
   workflow_dispatch: # lancement manuel (seul cas ou cette pipeline publie)
 
@@ -56,10 +56,24 @@ jobs:
           cache-dependency-path: ${{ matrix.component }}/package-lock.json
 
       - name: 🧹 ESLint — analyse du style et des bonnes pratiques
+        id: eslint
         working-directory: ${{ matrix.component }}
         run: |
           npm ci
           npm run lint
+
+      - name: Résumé
+        if: always()
+        run: |
+          if [ "${{ steps.eslint.outcome }}" = "success" ]; then icon="✅"; verdict="Réussi"; else icon="❌"; verdict="Échoué"; fi
+          {
+            echo "### 🧹 Lint — ESLint (${{ matrix.component }})"
+            echo ""
+            echo "| Champ | Valeur |"
+            echo "|---|---|"
+            echo "| Résultat | ${icon} **${verdict}** |"
+            echo "| Question | Mon code respecte-t-il les règles d'écriture ? |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # --- 🧪 Tests — Jest (backend) / Vitest (frontend) --------------------------
   # Le frontend utilise Vitest, pas Jest : meme facon d'ecrire les tests
@@ -84,6 +98,7 @@ jobs:
           cache-dependency-path: ${{ matrix.component }}/package-lock.json
 
       - name: 🧪 ${{ matrix.tool }} — tests unitaires + couverture
+        id: run_tests
         working-directory: ${{ matrix.component }}
         run: |
           npm ci
@@ -93,11 +108,26 @@ jobs:
       # fichier au job suivant, il faut donc le deposer quelque part : c'est le
       # role des "artefacts". Ici on transmet la couverture a SonarQube.
       - name: Transmettre la couverture au job qualite
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-${{ matrix.component }}
           path: ${{ matrix.component }}/coverage/lcov.info
           retention-days: 1
+          if-no-files-found: warn
+
+      - name: Résumé
+        if: always()
+        run: |
+          if [ "${{ steps.run_tests.outcome }}" = "success" ]; then icon="✅"; verdict="Réussi"; else icon="❌"; verdict="Échoué"; fi
+          {
+            echo "### 🧪 Tests — ${{ matrix.tool }} (${{ matrix.component }})"
+            echo ""
+            echo "| Champ | Valeur |"
+            echo "|---|---|"
+            echo "| Résultat | ${icon} **${verdict}** |"
+            echo "| Question | Ma logique fonctionne-t-elle ? |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # --- 📊 Qualite — SonarQube -------------------------------------------------
   # SonarQube ne relance rien : il LIT le code et les rapports de couverture,
@@ -221,6 +251,7 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       - name: 🐳 Build — Docker
+        id: docker_build
         uses: docker/build-push-action@v6
         with:
           context: ./${{ matrix.component }}
@@ -242,6 +273,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }} # token natif, aucun secret a creer
 
       - name: 📦 Registry — push vers GHCR
+        id: registry_push
         if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v6
         with:
@@ -251,3 +283,22 @@ jobs:
             ${{ env.IMAGE }}:${{ github.sha }}
             ${{ env.IMAGE }}:latest
           cache-from: type=gha,scope=${{ matrix.component }}
+
+      - name: Résumé
+        if: always()
+        run: |
+          if [ "${{ steps.docker_build.outcome }}" = "success" ]; then build_icon="✅"; build_verdict="Réussi"; else build_icon="❌"; build_verdict="Échoué"; fi
+          case "${{ steps.registry_push.outcome }}" in
+            success) push="✅ publiée sur GHCR" ;;
+            skipped) push="⏭️ non publiée (réservé au lancement manuel depuis main)" ;;
+            *) push="❌ échec" ;;
+          esac
+          {
+            echo "### 🐳 Build — Docker (${{ matrix.component }})"
+            echo ""
+            echo "| Champ | Valeur |"
+            echo "|---|---|"
+            echo "| Build | ${build_icon} **${build_verdict}** |"
+            echo "| Image | \`${{ env.IMAGE }}:${{ github.sha }}\` |"
+            echo "| Publication GHCR | ${push} |"
+          } >> "$GITHUB_STEP_SUMMARY"
