@@ -13,6 +13,20 @@ rencontrer : c'est exactement ce que Docker résoudra à l'étape 2.
 C'est déjà la première leçon : sans conteneurs, chaque personne doit installer
 les bonnes versions elle-même. « Ça marche sur ma machine » commence ici.
 
+> **Windows — erreur PowerShell fréquente.** Si `npm install` ou `npm run dev`
+> refuse de s'exécuter avec une erreur du style
+> `l'exécution de scripts est désactivée sur ce système`, ce n'est pas un bug
+> npm : c'est la politique d'exécution PowerShell qui bloque les scripts
+> `.ps1` (npm en fournit un). Corrige une bonne fois pour toutes (pas besoin
+> d'être admin) :
+>
+> ```powershell
+> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+> ```
+>
+> ou, sans rien changer de permanent, remplace `npm` par `npm.cmd` pour la
+> commande en cours (`npm.cmd install`).
+
 ## 1. Préparer la base de données
 
 Ouvre un terminal psql (ou pgAdmin) et crée l'utilisateur et la base :
