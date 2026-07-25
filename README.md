@@ -12,8 +12,10 @@ d'environnement `APP_COLOR` qui change la couleur du front à chaque étape de l
    comprendre ce qu'on va automatiser (et ressentir les frictions).
 2. [docs/02-conteneuriser.md](docs/02-conteneuriser.md) — Docker et Compose : la stack en une
    commande, la config injectée au runtime (`APP_COLOR`).
-3. [docs/03-pipeline-ci.md](docs/03-pipeline-ci.md) — les deux pipelines CI : retour rapide sur
-   chaque pull request, porte complète (tests + scans de sécurité) à la fusion sur `main`.
+3. [docs/03-pipeline-devops.md](docs/03-pipeline-devops.md) — la pipeline de retour rapide (lint,
+   tests, qualité, build), lue pas à pas sur chaque pull request.
+4. [docs/04-pipeline-devsecops.md](docs/04-pipeline-devsecops.md) — la porte complète : les mêmes
+   jobs + les 5 tests de sécurité, l'intégration et l'E2E, à la fusion sur `main`.
 
 ## Architecture
 
@@ -141,7 +143,7 @@ DevSecOps.yml` il est conditionné à un push sur `main` qui a franchi les 5 por
 > **SonarQube sans configuration** : le job `quality` démarre son propre serveur SonarQube en
 > conteneur, génère un token via l'API, analyse, puis publie le Quality Gate et les métriques clés
 > dans le résumé du run (`Summary`) — le serveur disparaît avec le job. Pas de compte ni de secret à
-> créer. Détail dans [docs/03-pipeline-ci.md](docs/03-pipeline-ci.md).
+> créer. Détail dans [docs/03-pipeline-devops.md](docs/03-pipeline-devops.md).
 
 ## Déroulé pédagogique du TP
 

@@ -68,4 +68,5 @@ viendra d'une **ConfigMap**, et rien d'autre ne changera.
   le contrat entre l'image et son environnement.
 - Compose orchestre en local ce que Kubernetes orchestrera en production.
 - Prochaine étape : automatiser tests et sécurité à chaque changement de code,
-  dans [03-pipeline-ci.md](03-pipeline-ci.md).
+  dans [03-pipeline-devops.md](03-pipeline-devops.md) puis
+  [04-pipeline-devsecops.md](04-pipeline-devsecops.md).

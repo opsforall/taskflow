@@ -15,8 +15,11 @@ theme, injected at **container runtime** (not build time) at each level — Dock
 `frontend/docker/40-inject-env.sh` or `frontend/src/theme.js`.
 
 The guided walkthrough lives in `docs/01-lancer-sans-docker.md` → `02-conteneuriser.md` →
-`03-pipeline-ci.md`, read in that order. `README.md` has additional detail but is **out of date** on
-the CI section — it describes `ci.yml`/`ci-permissif.yml`, which no longer exist (see below).
+`03-pipeline-devops.md` → `04-pipeline-devsecops.md`, read in that order — the last two walk
+`.github/workflows/Pipeline DevOps.yml` and `Pipeline DevSecOps.yml` step by step. `README.md` has
+additional detail but the exact job names/structure churn frequently (job keys have been renamed
+and merged several times) — trust the workflow files and the two `docs/0*-pipeline-*.md` pages over
+README's job tables when they disagree.
 
 ## Commands
 
@@ -130,9 +133,12 @@ trigger on the same event — running both together would race on the same GHCR 
   the server is gone once the job ends. It's `continue-on-error: true` (measured, not yet blocking).
   This was a deliberate choice to avoid any SonarCloud account/token setup for a training repo.
 - The 5 security jobs **do** block: a HIGH/CRITICAL finding fails the job (`exit-code: 1`), which
-  blocks `build`, which blocks the GHCR push. `demo-insecure/` and `k8s-insecure/` exist specifically
-  to demonstrate these gates *failing* on purpose (run the scanners against them manually — see
-  `docs/03-pipeline-ci.md` and `CORRECTIONS.md`) — they're excluded from the real scans.
+  blocks `build`, which blocks the GHCR push. They currently live as 5 matrix instances of one job
+  keyed `securite` (merged so the Actions graph shows a single "Matrix: securite" card instead of 4
+  separate jobs — each matrix instance runs exactly one tool via a per-step `if: matrix.id == '...'`
+  condition). `demo-insecure/` and `k8s-insecure/` exist specifically to demonstrate these gates
+  *failing* on purpose (run the scanners against them manually — see
+  `docs/04-pipeline-devsecops.md` and `CORRECTIONS.md`) — they're excluded from the real scans.
 - SCA vs. SAST vs. IaC, the three-way split worth keeping straight: SCA = what you *import*
   (dependencies), SAST = what you *write* (your own code), IaC = what you *configure*
   (infrastructure manifests).
