@@ -40,11 +40,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # --- Lint - ESLint -------------------------------------------------------
+  # --- Test Qualité - ESLint -------------------------------------------------------
   # `matrix` decline le meme job une fois par composant : deux machines en
   # parallele, une pour le frontend, une pour le backend.
   lint:
-    name: Lint - ESLint (${{ matrix.component }})
+    name: Test Qualité - ESLint (${{ matrix.component }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false # on veut voir les erreurs des DEUX composants
@@ -70,7 +70,7 @@ jobs:
         run: |
           if [ "${{ steps.eslint.outcome }}" = "success" ]; then verdict="Réussi"; else verdict="Échoué"; fi
           {
-            echo "### Lint - ESLint (${{ matrix.component }})"
+            echo "### Test Qualité - ESLint (${{ matrix.component }})"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"

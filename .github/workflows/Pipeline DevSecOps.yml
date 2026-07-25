@@ -55,9 +55,9 @@ jobs:
   # LA BASE DevOps - identique a "Pipeline DevOps.yml"
   # ============================================================================
 
-  # --- Lint - ESLint -------------------------------------------------------
+  # --- Test Qualité - ESLint -------------------------------------------------------
   lint:
-    name: Lint - ESLint (${{ matrix.component }})
+    name: Test Qualité - ESLint (${{ matrix.component }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -83,7 +83,7 @@ jobs:
         run: |
           if [ "${{ steps.eslint.outcome }}" = "success" ]; then verdict="Réussi"; else verdict="Échoué"; fi
           {
-            echo "### Lint - ESLint (${{ matrix.component }})"
+            echo "### Test Qualité - ESLint (${{ matrix.component }})"
             echo ""
             echo "| Champ | Valeur |"
             echo "|---|---|"
