@@ -12,11 +12,8 @@ du fichier.
 ## 0. Le rôle de cette pipeline
 
 Elle sert de **retour rapide** pendant que tu développes : à chaque pull
-request, elle vérifie le style, les tests et la qualité, et construit l'image
-— sans les scans de sécurité (ça, c'est le rôle de la pipeline DevSecOps,
-couverte dans [04-pipeline-devsecops.md](04-pipeline-devsecops.md), qui tourne
-à la fusion sur `main`). L'idée : un retour en quelques minutes sur ta PR, pas
-en quinze.
+request, elle vérifie le style, les tests et la qualité, et construit l'image.
+L'idée : un retour en quelques minutes sur ta PR.
 
 ## 1. Le déclencheur (`on:`)
 
@@ -194,8 +191,7 @@ quoi que ce soit.
    et seulement sur la branche `main`*. Sur une pull request normale,
    `github.event_name` vaut `pull_request`, donc la condition est fausse et
    ces deux étapes sont **ignorées** (`skipped`) — jamais de publication
-   automatique depuis une PR. La publication automatique, elle, est le rôle
-   de la pipeline DevSecOps (elle scanne l'image avant de la pousser).
+   automatique depuis une PR.
 3. **Résumé** — regarde `steps.docker_build.outcome` pour le statut du build,
    puis `steps.registry_push.outcome` : `success` (publiée), `skipped` (pas
    sur main en manuel — normal sur une PR), ou tout le reste (`échec`).
@@ -221,5 +217,3 @@ quoi que ce soit.
   du job devient l'étiquette « Matrix: ... » dans le graphe GitHub Actions.
 - `needs:` construit la chaîne : `quality` attend les tests, `build` attend
   `quality`.
-- La suite logique : [04-pipeline-devsecops.md](04-pipeline-devsecops.md),
-  qui reprend exactement ces 4 jobs et y ajoute la sécurité.

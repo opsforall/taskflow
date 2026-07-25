@@ -14,8 +14,6 @@ d'environnement `APP_COLOR` qui change la couleur du front à chaque étape de l
    commande, la config injectée au runtime (`APP_COLOR`).
 3. [docs/03-pipeline-devops.md](docs/03-pipeline-devops.md) — la pipeline de retour rapide (lint,
    tests, qualité, build), lue pas à pas sur chaque pull request.
-4. [docs/04-pipeline-devsecops.md](docs/04-pipeline-devsecops.md) — la porte complète : les mêmes
-   jobs + les 5 tests de sécurité, l'intégration et l'E2E, à la fusion sur `main`.
 
 ## Architecture
 
@@ -43,7 +41,7 @@ d'environnement `APP_COLOR` qui change la couleur du front à chaque étape de l
 | [k8s/](k8s/) | Manifests Kubernetes **durcis** (version de référence) |
 | [k8s-insecure/](k8s-insecure/) | Mêmes manifests **volontairement vulnérables** (démo) |
 | [demo-insecure/](demo-insecure/) | Code + dépendance volontairement vulnérables (démo SAST/SCA) |
-| [.github/workflows/](.github/workflows/) | `Pipeline DevOps.yml` (PR) et `Pipeline DevSecOps.yml` (main) |
+| [.github/workflows/](.github/workflows/) | `Pipeline DevOps.yml` — lint, tests, qualité, build sur chaque pull request |
 | [docker-compose.yml](docker-compose.yml) | Stack complète en local |
 | [.env.example](.env.example) | Variables d'environnement de démo (copier en `.env`) |
 | [CORRECTIONS.md](CORRECTIONS.md) | Guide formateur : chaque vulnérabilité et son correctif |
@@ -108,63 +106,31 @@ docker compose up -d --build
 cd e2e && npm install && npx playwright install --with-deps chromium && npm test
 ```
 
-## Pipeline CI — deux fichiers, un modèle « retour rapide / porte complète »
+## Pipeline CI
 
-Le dépôt contient **deux pipelines**, qui ne se déclenchent jamais sur le même événement :
+Le fichier [`Pipeline DevOps.yml`](.github/workflows/Pipeline%20DevOps.yml) se déclenche à chaque
+**pull request** : c'est le retour rapide pendant que tu développes.
 
-| Pipeline | Se déclenche | Contient |
+| Job | Outil | Famille |
 |---|---|---|
-| [`Pipeline DevOps.yml`](.github/workflows/Pipeline%20DevOps.yml) | chaque **pull request** | 4 jobs : `lint`, `test`, `quality`, `build` |
-| [`Pipeline DevSecOps.yml`](.github/workflows/Pipeline%20DevSecOps.yml) | fusion sur **`main`** (+ déclenchement manuel) | **la même base** + `integration`, 5 tests de sécurité, `e2e` |
+| `test-qualite` | ESLint | Qualité |
+| `test-unitaire` | Jest (backend) / Vitest (frontend) | Test, avec couverture |
+| `quality` | SonarQube (serveur jetable, zéro configuration) | Qualité, non bloquant |
+| `build` | Docker + GHCR | Build |
 
-La seconde n'est pas un pipeline différent : c'est la même base à laquelle on ajoute la sécurité.
-Tous les jobs d'analyse partent **en parallèle** (fan-out), `build` les attend tous (`needs`,
-fan-in), et `e2e` attend `build`.
-
-| Job | Outil | Famille | Où |
-|---|---|---|---|
-| `lint` | ESLint | Qualité | les deux pipelines |
-| `test` | Jest (backend) / Vitest (frontend) | Tests unitaires + couverture | les deux pipelines |
-| `quality` | SonarQube (serveur jetable, zéro configuration) | Dette technique, non bloquant | les deux pipelines |
-| `integration` | Jest + vraie PostgreSQL | Tests d'intégration | DevSecOps uniquement |
-| `secrets` | Gitleaks | Détection de secrets (historique complet) | DevSecOps uniquement |
-| `sca` | Trivy fs | **SCA** (dépendances) | DevSecOps uniquement |
-| `sast` | Semgrep | **SAST** (code) | DevSecOps uniquement |
-| `iac` | Trivy config | Manifests k8s | DevSecOps uniquement |
-| `build` | Docker + Trivy image + SBOM (DevSecOps) + push GHCR | Build / scan / publication | les deux pipelines |
-| `e2e` | Playwright | Acceptance (stack déployée) | DevSecOps uniquement |
-
-Points de cours matérialisés dans le YAML : `fail-fast: false` (voir *toutes* les erreurs),
-`cache-dependency-path` par composant, **SCA ≠ SAST ≠ IaC** (ce que j'importe / ce que j'écris / ce
-que je configure), et surtout : le **push GHCR n'est jamais automatique depuis une pull request** —
-sur `Pipeline DevOps.yml` il faut un déclenchement manuel depuis `main`, sur `Pipeline
-DevSecOps.yml` il est conditionné à un push sur `main` qui a franchi les 5 portes de sécurité.
+Enchaînement : `test-qualite` et `test-unitaire` partent en parallèle (chacun décliné par
+composant via `strategy: matrix`), `quality` les attend (elle a besoin de leurs rapports de
+couverture), `build` attend `quality`.
 
 > **SonarQube sans configuration** : le job `quality` démarre son propre serveur SonarQube en
 > conteneur, génère un token via l'API, analyse, puis publie le Quality Gate et les métriques clés
 > dans le résumé du run (`Summary`) — le serveur disparaît avec le job. Pas de compte ni de secret à
 > créer. Détail dans [docs/03-pipeline-devops.md](docs/03-pipeline-devops.md).
 
-## Déroulé pédagogique du TP
+Le **push vers GHCR n'est jamais automatique depuis une pull request** : il faut un déclenchement
+manuel (`workflow_dispatch`) depuis `main` pour publier une image via cette pipeline.
 
-L'idée : une pipeline **verte** n'apprend rien. On fait donc échouer chaque outil, puis on corrige.
-Le code principal reste sain (pipeline verte) ; les vulnérabilités vivent dans des dossiers isolés
-(`demo-insecure/`, `k8s-insecure/`) que les pipelines ne scannent jamais automatiquement. Détail
-complet dans [CORRECTIONS.md](CORRECTIONS.md).
-
-1. **Ouvrir une pull request.** `Pipeline DevOps.yml` s'exécute : lint, tests, qualité, build — le
-   retour rapide, sans les scans de sécurité (ce n'est pas leur rôle sur ce pipeline).
-2. **Faire échouer chaque outil de sécurité, à la main** (les dossiers de démo ne sont scannés que
-   volontairement, jamais par la CI) :
-   ```bash
-   trivy fs --scanners vuln --severity HIGH,CRITICAL demo-insecure/   # SCA : lodash 4.17.4
-   semgrep scan --config p/javascript --config p/nodejs demo-insecure/ # SAST : eval(), SQL concat
-   trivy config --severity HIGH,CRITICAL k8s-insecure/                 # IaC : 6 alertes HIGH
-   ```
-3. **Corriger** en s'appuyant sur les versions saines (`backend/`, `k8s/`) et sur CORRECTIONS.md.
-4. **Fusionner sur `main`.** `Pipeline DevSecOps.yml` s'exécute : la porte complète — les 5 tests de
-   sécurité doivent tous être verts pour que l'image parte sur GHCR. C'est le moment clé du cours :
-   ce qui était juste un retour rapide sur la PR devient une porte bloquante à la livraison.
+Détail pas à pas de chaque job : [docs/03-pipeline-devops.md](docs/03-pipeline-devops.md).
 
 ## Déploiement Kubernetes
 
@@ -190,9 +156,11 @@ Deployments frontend/backend (2 replicas), **StatefulSet PostgreSQL** (+ PVC via
 `volumeClaimTemplates`), Services ClusterIP + Service headless pour la base, Ingress, et une
 **NetworkPolicy** qui réserve l'accès à la base au seul backend.
 
-> **Images GHCR** : la CI publie sous `ghcr.io/opsforall/taskflow-*` avec les tags `:<sha>`,
-> `:1.0.0` et `:latest`. Les Deployments référencent `:1.0.0` (tag versionné, jamais `:latest`).
-> Par défaut les packages GHCR sont **privés** : rends-les publics **une fois** (Package settings →
+> **Images GHCR** : `Pipeline DevOps.yml` publie sous `ghcr.io/opsforall/taskflow-*` avec les tags
+> `:<sha>` et `:latest` (déclenchement manuel uniquement). Les Deployments référencent `:1.0.0`, un
+> tag versionné à créer/pousser toi-même (`docker tag ... :1.0.0 && docker push ... :1.0.0`) plutôt
+> que de suivre `:latest`. Par défaut les packages GHCR sont **privés** : rends-les publics **une
+> fois** (Package settings →
 > Change visibility → Public) et ils le restent pour les push suivants, OU crée un `imagePullSecret`
 > (voir plus bas). Il n'existe pas d'API pour basculer la visibilité depuis la pipeline.
 >
@@ -209,9 +177,8 @@ Deployments frontend/backend (2 replicas), **StatefulSet PostgreSQL** (+ PVC via
 - **Kubernetes** : Secret vs ConfigMap, `runAsNonRoot`, `runAsUser` explicite,
   `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, `capabilities: drop ALL`,
   `seccompProfile: RuntimeDefault`, requests/limits, probes, NetworkPolicy, DB non exposée.
-- **CI** : lint + tests + SCA + SAST + secrets + IaC + scan d'images + SBOM, gates bloquantes
-  (`Pipeline DevSecOps.yml`), push GHCR jamais automatique depuis une pull request, permissions
-  minimales par job.
+- **CI** : lint + tests + Quality Gate, push GHCR jamais automatique depuis une pull request,
+  permissions minimales par job.
 
 Points volontairement simplifiés (exercices possibles) : JWT en `localStorage` (vs cookie
 `httpOnly`), secrets k8s committés pour la démo, pas de TLS.
