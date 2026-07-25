@@ -37,7 +37,7 @@ premier démarrage (fichier `backend/src/db.js`).
 ```bash
 cd backend
 npm.cmd install      # installe les dépendances (express, pg, jsonwebtoken...)
-npm run dev        # démarre l'API sur http://localhost:3000
+npm.cmd run dev        # démarre l'API sur http://localhost:3000
 ```
 
 
@@ -63,9 +63,19 @@ npm install
 npm run dev        # démarre Vite sur http://localhost:5173
 ```
 
-Ouvre http://localhost:5173, crée un compte, ajoute des tâches. En dev, Vite
-relaie les appels `/api` vers le backend (regarde `frontend/vite.config.js`) :
-le front ne connaît jamais l'adresse de la base, seulement l'API.
+Ouvre http://localhost:5173 : il n'y a **aucun compte par défaut**, il faut
+créer le tien.
+
+1. Clique sur « Créer un compte » (page `/register`) et renseigne :
+   - **Nom** (2 caractères minimum)
+   - **Email** (format valide, ex. `toi@example.com`)
+   - **Mot de passe** (8 caractères minimum)
+2. Tu es automatiquement connecté après l'inscription. Pour te reconnecter
+   plus tard (page `/login`), utilise ce même **email + mot de passe**.
+
+Ajoute des tâches pour vérifier que tout fonctionne. En dev, Vite relaie les
+appels `/api` vers le backend (regarde `frontend/vite.config.js`) : le front
+ne connaît jamais l'adresse de la base, seulement l'API.
 
 ## 4. Lancer les tests
 
