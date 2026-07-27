@@ -1,0 +1,609 @@
+# ==============================================================================
+# PIPELINE DevSecOps - la base DevOps + la securite
+# ==============================================================================
+# Cette pipeline REPREND les jobs de "Pipeline DevOps.yml" (qualite/tests/build)
+# et y ajoute 5 tests de securite + les tests d'integration et de bout en bout.
+# C'est la PORTE COMPLETE : elle tourne a la fusion sur main.
+#
+# LES 5 TESTS DE SECURITE - tous regroupes dans UN SEUL job matrix "securite"
+# (voir plus bas pourquoi), mais chacun garde 1 outil, 1 question :
+#
+#   secrets   Gitleaks       ai-je committe un mot de passe ?
+#   deps      Trivy fs       mes DEPENDANCES ont-elles des failles connues ?
+#   sast      Semgrep        MON CODE contient-il des failles ?
+#   config    Trivy config   mes manifests Kubernetes sont-ils durcis ?
+#   image     Trivy image    mon image finale contient-elle des failles ? (dans build)
+#
+# LA DISTINCTION A RETENIR :
+#   SCA  = ce que j'IMPORTE (les bibliotheques des autres)
+#   SAST = ce que j'ECRIS   (mon propre code)
+#   IaC  = ce que je CONFIGURE (mon infrastructure)
+#
+# `strategy: matrix` decline un job plusieurs fois. GitHub Actions affiche
+# alors une carte "Matrix: <cle du job>" regroupant toutes ses instances.
+# C'est le SEUL mecanisme qui permet de regrouper des jobs sous un titre
+# commun dans le graphe - c'est pourquoi les 5 tests de securite sont ecrits
+# comme UN SEUL job avec 5 instances de matrix (chaque instance ne lance
+# qu'UN SEUL outil, via `if: matrix.id == '...'` sur chaque etape), plutot que
+# 4 jobs separes. Cout du choix : les etapes sont conditionnelles au lieu
+# d'un job = un outil ; a lire avec le commentaire du job "securite" plus bas.
+#
+# `integration` a une VRAIE dependance sur les tests unitaires (needs) : inutile
+# de lancer des tests d'integration, plus lents et plus couteux (une vraie
+# base Postgres), si les tests unitaires echouent deja. Consequence assumee :
+# elle n'est plus strictement en parallele avec le reste du fan-out.
+#
+# ENCHAINEMENT :
+#
+#     test-qualite ─┬─► quality ────────┐
+#     test-unitaire ┴─► integration ────┼─► build (+ scan image + SBOM + push) ─► e2e
+#     securite (5 tests) ───────────────┘
+#
+# Chaque job est une PORTE : s'il echoue, rien ne se construit, rien n'est
+# publie. C'est le "shift-left" : on bloque au commit, pas en production.
+# ------------------------------------------------------------------------------
+
+name: Pipeline DevSecOps
+
+# Elle ne tourne qu'a la fusion sur main : pendant le developpement, c'est la
+# "Pipeline DevOps" (plus rapide) qui donne le retour sur les pull requests.
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch: # lancement manuel de la porte complete
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devsecops-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================================================
+  # LA BASE DevOps - identique a "Pipeline DevOps.yml"
+  # ============================================================================
+
+  # --- Test Qualité ESLint -----------------------------------------------------
+  test-qualite:
+    name: ESLint (${{ matrix.component }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [frontend, backend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ matrix.component }}/package-lock.json
+
+      - name: ESLint - analyse du style et des bonnes pratiques
+        id: eslint
+        working-directory: ${{ matrix.component }}
+        run: |
+          npm ci
+          npm run lint
+
+      - name: Résumé
+        if: always()
+        run: |
+          if [ "${{ steps.eslint.outcome }}" = "success" ]; then verdict="Réussi"; else verdict="Échoué"; fi
+          {
+            echo "### Test Qualité ESLint (${{ matrix.component }})"
+            echo ""
+            echo "| Champ | Valeur |"
+            echo "|---|---|"
+            echo "| Famille | Qualité |"
+            echo "| Outil | ESLint |"
+            echo "| Résultat | **${verdict}** |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # --- Test unitaire Jest (backend) / Vitest (frontend) ------------------------
+  # Le frontend utilise Vitest, pas Jest : meme facon d'ecrire les tests
+  # (describe / it / expect), mais un lanceur different, integre a Vite.
+  test-unitaire:
+    name: ${{ matrix.tool }} (${{ matrix.component }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: backend
+            tool: Jest
+          - component: frontend
+            tool: Vitest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ matrix.component }}/package-lock.json
+
+      - name: ${{ matrix.tool }} - tests unitaires + couverture
+        id: run_tests
+        working-directory: ${{ matrix.component }}
+        run: |
+          npm ci
+          npm run test:coverage
+
+      - name: Transmettre la couverture au job qualite
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.component }}
+          path: ${{ matrix.component }}/coverage/lcov.info
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Résumé
+        if: always()
+        run: |
+          if [ "${{ steps.run_tests.outcome }}" = "success" ]; then verdict="Réussi"; else verdict="Échoué"; fi
+          {
+            echo "### Test unitaire ${{ matrix.tool }} (${{ matrix.component }})"
+            echo ""
+            echo "| Champ | Valeur |"
+            echo "|---|---|"
+            echo "| Famille | Test |"
+            echo "| Outil | ${{ matrix.tool }} |"
+            echo "| Résultat | **${verdict}** |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # --- Qualite - SonarQube -------------------------------------------------
+  # Serveur SonarQube JETABLE demarre dans le job : zero compte, zero secret.
+  # Les explications detaillees sont dans "Pipeline DevOps.yml" (meme job).
+  quality:
+    name: Test Qualité SonarQube
+    runs-on: ubuntu-latest
+    needs: [test-qualite, test-unitaire]
+    continue-on-error: true # mesuree mais pas encore bloquante
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage-backend
+          path: backend/coverage
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage-frontend
+          path: frontend/coverage
+
+      - name: Demarrer un serveur SonarQube ephemere
+        run: |
+          docker run -d --name sonarqube -p 9000:9000 \
+            -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
+            sonarqube:26.7.0.124771-community
+
+      - name: Attendre que SonarQube soit pret (~1 min)
+        run: |
+          for i in $(seq 1 60); do
+            status=$(curl -s http://localhost:9000/api/system/status | grep -o '"status":"[^"]*"' | cut -d'"' -f4 || true)
+            if [ "$status" = "UP" ]; then echo "SonarQube pret"; exit 0; fi
+            echo "tentative $i/60 - status=${status:-demarrage}"; sleep 5
+          done
+          echo "SonarQube n'a pas demarre a temps"; docker logs sonarqube; exit 1
+
+      - name: Generer un token d'analyse
+        id: sonar
+        run: |
+          token=$(curl -s -u admin:admin -X POST \
+            "http://localhost:9000/api/user_tokens/generate?name=ci" \
+            | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: SonarQube - analyse de la qualite du code
+        uses: SonarSource/sonarqube-scan-action@v8
+        env:
+          SONAR_TOKEN: ${{ steps.sonar.outputs.token }}
+          SONAR_HOST_URL: http://localhost:9000
+        with:
+          args: -Dsonar.qualitygate.wait=true
+
+      - name: Publier les mesures dans le resume du run
+        if: always()
+        run: |
+          json=$(curl -s -u "${{ steps.sonar.outputs.token }}:" \
+            "http://localhost:9000/api/measures/component?component=taskflow&metricKeys=bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density,ncloc")
+          get() { echo "$json" | jq -r ".component.measures[] | select(.metric==\"$1\") | .value // \"-\""; }
+          gate=$(curl -s -u "${{ steps.sonar.outputs.token }}:" \
+            "http://localhost:9000/api/qualitygates/project_status?projectKey=taskflow" \
+            | jq -r .projectStatus.status)
+          {
+            echo "### Test Qualité SonarQube"
+            echo ""
+            echo "| Mesure | Valeur |"
+            echo "|---|---|"
+            echo "| Famille | Qualité |"
+            echo "| Outil | SonarQube |"
+            echo "| Quality Gate | **${gate}** |"
+            echo "| Bugs | $(get bugs) |"
+            echo "| Vulnérabilités | $(get vulnerabilities) |"
+            echo "| Code smells | $(get code_smells) |"
+            echo "| Couverture | $(get coverage) % |"
+            echo "| Duplication | $(get duplicated_lines_density) % |"
+            echo "| Lignes de code | $(get ncloc) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # --- Test d'integration - Jest + une VRAIE base PostgreSQL ---------------
+  # `services:` demarre un conteneur PostgreSQL a cote du job. Les tests
+  # unitaires simulent la base ; ceux-ci parlent a une vraie.
+  #
+  # NEEDS REEL (pas cosmetique) : inutile de payer le cout d'une vraie base
+  # Postgres et de tests plus lents si les tests unitaires echouent deja.
+  # Consequence assumee : ce job demarre apres les tests unitaires, il n'est
+  # plus strictement en parallele avec le reste du fan-out.
+  integration:
+    name: Test d'intégration Jest + PostgreSQL
+    runs-on: ubuntu-latest
+    needs: [test-unitaire]
+    services:
+      postgres:
+        image: postgres:16.4-alpine
+        env:
+          POSTGRES_USER: taskflow
+          POSTGRES_PASSWORD: taskflow
+          POSTGRES_DB: taskflow
+        ports:
+          - 5432:5432
+        # GitHub attend que la base reponde avant de lancer les tests.
+        options: >-
+          --health-cmd "pg_isready -U taskflow -d taskflow"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Jest - l'API et la base se parlent-elles vraiment ?
+        id: jest_integration
+        working-directory: backend
+        env:
+          DB_HOST: localhost
+          DB_PORT: "5432"
+          DB_USER: taskflow
+          DB_PASSWORD: taskflow
+          DB_NAME: taskflow
+          JWT_SECRET: test-secret-integration
+        run: |
+          npm ci
+          npm run test:integration
+
+      - name: Résumé
+        if: always()
+        run: |
+          if [ "${{ steps.jest_integration.outcome }}" = "success" ]; then verdict="Réussi"; else verdict="Échoué"; fi
+          {
+            echo "### Test d'intégration Jest + PostgreSQL"
+            echo ""
+            echo "| Champ | Valeur |"
+            echo "|---|---|"
+            echo "| Famille | Test |"
+            echo "| Outil | Jest + PostgreSQL |"
+            echo "| Résultat | **${verdict}** |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ============================================================================
+  # SECURITE - les 5 tests fusionnes dans UN SEUL job matrix
+  # ============================================================================
+  # Pourquoi un seul job : c'est le prix a payer pour obtenir UNE SEULE carte
+  # "Matrix: securite" dans le graphe GitHub Actions au lieu de 4 jobs epars
+  # (rappel : GitHub ne regroupe visuellement sous un titre commun QUE les
+  # jobs matrix - aucun autre mecanisme n'existe). Chaque instance du matrix
+  # ne lance qu'UN SEUL des 5 outils : chaque etape ci-dessous a un
+  # `if: matrix.id == '...'` qui la reserve a la bonne instance ; les 4 autres
+  # etapes sont "skipped" pour cette instance. C'est le compromis inverse de
+  # d'habitude : un seul job a lire au lieu de 4, mais des conditions a
+  # suivre au lieu d'un mapping direct "1 job = 1 outil".
+  securite:
+    name: ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: secrets
+            label: Secrets Gitleaks
+            tool: Gitleaks
+          - id: deps
+            label: Dépendances Trivy fs (frontend)
+            tool: Trivy fs
+            component: frontend
+          - id: deps
+            label: Dépendances Trivy fs (backend)
+            tool: Trivy fs
+            component: backend
+          - id: sast
+            label: SAST Semgrep
+            tool: Semgrep
+          - id: config
+            label: Configuration Trivy config
+            tool: Trivy config
+    steps:
+      # fetch-depth: 0 est requis par Gitleaks (historique complet) ; sans
+      # effet sur les 4 autres instances, qui n'ont besoin que du code actuel.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # --- QUESTION : ai-je committe un mot de passe, une cle d'API, un token ?
+      # Gitleaks lit le code ET TOUT L'HISTORIQUE git : un secret supprime dans
+      # un commit recent reste lisible dans les commits precedents. Le
+      # supprimer ne suffit donc pas - il faut le REVOQUER.
+      - name: Gitleaks - un secret a-t-il fuite dans git ?
+        if: matrix.id == 'secrets'
+        id: gitleaks
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo \
+            ghcr.io/gitleaks/gitleaks:v8.30.1 \
+            git /repo --redact --verbose
+
+      # --- QUESTION : les bibliotheques que j'installe ont-elles des failles
+      # connues ? Trivy lit package-lock.json et compare chaque version aux
+      # bases publiques de vulnerabilites (CVE). C'est le "SCA".
+      - name: Trivy - mes dépendances ont-elles des CVE ?
+        if: matrix.id == 'deps'
+        id: trivy_sca
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ${{ matrix.component }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1" # 1 = le job echoue = la porte se ferme
+          format: table
+
+      # --- QUESTION : MON code contient-il des failles (injection SQL, XSS,
+      # secret en dur, crypto faible) ? Semgrep applique des regles ecrites
+      # en YAML, donc LISIBLES. C'est le "SAST".
+      - name: Semgrep - mon code contient-il des failles ?
+        if: matrix.id == 'sast'
+        id: semgrep
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src semgrep/semgrep \
+            semgrep scan \
+              --config p/javascript --config p/nodejs --config p/react \
+              --error --metrics off \
+              backend/src frontend/src
+
+      # --- QUESTION : mes manifests Kubernetes sont-ils durcis ? Trivy
+      # verifie des regles comme "le conteneur tourne-t-il en root ?". C'est
+      # l'"IaC scanning" : on securise la CONFIGURATION, pas le code.
+      # Le dossier k8s-insecure/ est volontairement EXCLU (demo "scan rouge",
+      # a lancer a la main - voir CORRECTIONS.md).
+      - name: Trivy - mes manifests k8s sont-ils durcis ?
+        if: matrix.id == 'config'
+        id: trivy_iac
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: k8s
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          format: table
+
+      # Une seule des 4 etapes ci-dessus s'est reellement executee pour cette
+      # instance ; les 3 autres valent "skipped". On retient la seule qui
+      # n'est pas "skipped".
+      - name: Résumé
+        if: always()
+        run: |
+          outcome=""
+          for o in "${{ steps.gitleaks.outcome }}" "${{ steps.trivy_sca.outcome }}" "${{ steps.semgrep.outcome }}" "${{ steps.trivy_iac.outcome }}"; do
+            if [ "$o" != "skipped" ] && [ -n "$o" ]; then outcome="$o"; fi
+          done
+          if [ "$outcome" = "success" ]; then verdict="Réussi"; else verdict="Échoué"; fi
+          {
+            echo "### ${{ matrix.label }}"
+            echo ""
+            echo "| Champ | Valeur |"
+            echo "|---|---|"
+            echo "| Famille | Sécurité |"
+            echo "| Outil | ${{ matrix.tool }} |"
+            echo "| Résultat | **${verdict}** |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ============================================================================
+  # FAN-IN : build + TEST 5/5 (scan de l'image) + SBOM + publication
+  # ============================================================================
+  build:
+    name: Build Docker (${{ matrix.component }})
+    runs-on: ubuntu-latest
+    # Le build attend que TOUTES les portes soient vertes.
+    needs: [test-qualite, test-unitaire, quality, integration, securite]
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [frontend, backend]
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/taskflow-${{ matrix.component }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker
+        id: docker_build
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.component }}
+          load: true # image LOCALE : on la scanne AVANT de la publier
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+
+      # --- TEST 5/5 : l'image finale - Trivy image -------------------------
+      # QUESTION : l'image que je vais livrer contient-elle des failles ?
+      # Difference avec le SCA : ici on ne scanne plus seulement mes
+      # dependances npm, mais TOUT le contenu de l'image - y compris les
+      # paquets du systeme d'exploitation de base (Alpine, nginx...).
+      #
+      # ORDRE IMPORTANT : on scanne AVANT de publier. Une image vulnerable ne
+      # doit jamais atteindre le registre.
+      - name: Trivy - mon image finale est-elle saine ?
+        id: trivy_image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+
+      # --- SBOM : l'inventaire de l'image -------------------------------------
+      # Un SBOM (Software Bill of Materials) est la LISTE de tout ce que
+      # contient l'image, avec les versions, au format standard CycloneDX.
+      #
+      # A quoi ca sert, concretement ? Le scan ci-dessus repond "y a-t-il une
+      # faille connue AUJOURD'HUI ?". Le SBOM repond a une autre question, le
+      # jour ou une faille grave est publiee : "suis-je concerne ?" - il suffit
+      # de chercher le paquet dans l'inventaire, sans rien reconstruire.
+      # C'est ce qui a manque a tout le monde pendant l'incident Log4Shell.
+      - name: SBOM - inventaire du contenu de l'image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ env.IMAGE }}:${{ github.sha }}
+          format: cyclonedx
+          output: sbom-${{ matrix.component }}.cdx.json
+          exit-code: "0" # un inventaire ne juge rien : il ne bloque jamais
+
+      - name: Publier le SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.component }}
+          path: sbom-${{ matrix.component }}.cdx.json
+          retention-days: 30
+
+      # --- Publication vers GHCR -------------------------------------------
+      # On arrive ici uniquement si les 5 tests de securite sont verts.
+      - name: Registry - connexion a GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Registry - push vers GHCR
+        id: registry_push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.component }}
+          push: true
+          # :<sha> tracabilite, :1.0.0 tag referencé par les manifests k8s/,
+          # :latest commodite.
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:1.0.0
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha,scope=${{ matrix.component }}
+
+      - name: Résumé
+        if: always()
+        run: |
+          if [ "${{ steps.docker_build.outcome }}" = "success" ]; then build_verdict="Réussi"; else build_verdict="Échoué"; fi
+          if [ "${{ steps.trivy_image.outcome }}" = "success" ]; then scan_verdict="Aucune CVE HIGH/CRITICAL"; else scan_verdict="CVE HIGH/CRITICAL détectée(s)"; fi
+          components="-"
+          if [ -f "sbom-${{ matrix.component }}.cdx.json" ]; then
+            components=$(jq '.components | length' "sbom-${{ matrix.component }}.cdx.json")
+          fi
+          case "${{ steps.registry_push.outcome }}" in
+            success) push="publiée sur GHCR" ;;
+            skipped) push="non publiée (porte precedente fermee)" ;;
+            *) push="échec" ;;
+          esac
+          {
+            echo "### Build Docker (${{ matrix.component }})"
+            echo ""
+            echo "| Champ | Valeur |"
+            echo "|---|---|"
+            echo "| Famille | Build |"
+            echo "| Outil | Docker |"
+            echo "| Build | **${build_verdict}** |"
+            echo "| Scan image (Trivy) | **${scan_verdict}** |"
+            echo "| SBOM | ${components} composants inventoriés |"
+            echo "| Publication GHCR | ${push} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ============================================================================
+  # E2E : la derniere verification, sur l'application qui tourne pour de vrai
+  # ============================================================================
+  # Les tests precedents regardent le code, les dependances, l'image. Celui-ci
+  # demarre TOUTE la stack (base + API + front) et clique dedans comme un
+  # utilisateur, avec un vrai navigateur.
+  e2e:
+    name: Test e2e Playwright
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Demarrer la stack complete (docker compose)
+        run: docker compose up -d --build
+
+      # Un conteneur "demarre" n'est pas un conteneur "pret". On interroge donc
+      # les deux services jusqu'a ce qu'ils repondent 200, sinon on abandonne.
+      - name: Attendre que l'application soit prete
+        run: |
+          for i in $(seq 1 40); do
+            back=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/health/ready || true)
+            front=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/ || true)
+            if [ "$back" = "200" ] && [ "$front" = "200" ]; then echo "Stack prete"; exit 0; fi
+            echo "tentative $i/40 - backend=$back frontend=$front"; sleep 3
+          done
+          echo "La stack n'est pas prete a temps"; docker compose logs; exit 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Installer Playwright + Chromium
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Playwright - un utilisateur peut-il vraiment utiliser l'app ?
+        id: playwright
+        working-directory: e2e
+        env:
+          E2E_BASE_URL: http://localhost:8080
+        run: npm test
+
+      - name: Résumé
+        if: always()
+        run: |
+          if [ "${{ steps.playwright.outcome }}" = "success" ]; then verdict="Réussi"; else verdict="Échoué"; fi
+          {
+            echo "### Test e2e Playwright"
+            echo ""
+            echo "| Champ | Valeur |"
+            echo "|---|---|"
+            echo "| Famille | Test |"
+            echo "| Outil | Playwright |"
+            echo "| Résultat | **${verdict}** |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Logs de la stack (si echec)
+        if: failure()
+        run: docker compose logs
+
+      - name: Arreter la stack
+        if: always()
+        run: docker compose down -v
