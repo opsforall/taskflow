@@ -1,0 +1,55 @@
+# ==============================================================================
+#  Configuration Gitleaks
+# ==============================================================================
+# Gitleaks offre DEUX mecanismes pour accepter un faux positif :
+#
+#   .gitleaksignore  -> on ignore UNE OCCURRENCE, par empreinte
+#                       (<commit>:<fichier>:<regle>:<ligne>).
+#                       Fragile : l'empreinte contient le COMMIT et la LIGNE.
+#                       Des que le fichier bouge, un nouveau commit et un
+#                       nouveau numero de ligne = une NOUVELLE empreinte, donc
+#                       le meme faux positif revient et casse la pipeline.
+#
+#   .gitleaks.toml   -> on ignore UN MOTIF, par expression reguliere (ce
+#                       fichier). Independant du commit et de la ligne : le
+#                       faux positif reste couvert meme si le code est
+#                       deplace, renomme ou re-commite.
+#
+# Regle du pouce : empreinte pour un accident ponctuel du passe (un secret
+# d'exemple fige dans un vieux commit), motif pour une tournure de code
+# legitime qui va se repeter.
+# ==============================================================================
+
+[extend]
+useDefault = true # on garde les ~200 regles par defaut, on ne fait qu'AJOUTER
+
+# --- Faux positif assume : la regle "curl-auth-user" -------------------------
+# Elle detecte la syntaxe `curl -u texte:texte` sans distinguer un vrai
+# identifiant d'une simple ressemblance de forme. Deux cas dans le job
+# "quality" (SonarQube) des deux pipelines :
+#
+#   - `-u admin:admin` : identifiants PAR DEFAUT d'une instance SonarQube
+#     Community demarree dans le MEME job, sur localhost, detruite a la fin du
+#     job. Publiquement documentes par SonarSource, ils ne protegent rien.
+#
+#   - `-u "${{ steps.sonar.outputs.token }}:"` : une EXPRESSION GitHub Actions,
+#     pas un identifiant en dur. Le token est genere a l'execution et deja
+#     masque via ::add-mask:: (il apparait en "***" dans les logs).
+#
+# La portee est volontairement etroite : seule la regle curl-auth-user est
+# concernee, uniquement dans .github/workflows/, et uniquement pour ces deux
+# tournures precises. Un vrai `curl -u user:motdepasse` ailleurs (ou meme dans
+# un workflow) declenchera toujours l'alerte.
+[[allowlists]]
+description = "SonarQube jetable de la CI : serveur ephemere sur localhost"
+targetRules = ["curl-auth-user"]
+condition = "AND" # le chemin ET le motif doivent correspondre
+# Pas de "^" : en scan `git` le chemin est relatif (.github/workflows/x.yml),
+# en scan `dir` il est absolu (/repo/.github/workflows/x.yml). Sans ancrage,
+# l'exception vaut dans les deux modes.
+paths = ['''\.github/workflows/.*\.yml$''']
+regexTarget = "line"
+regexes = [
+  '''curl\s+-s\s+-u\s+admin:admin''',
+  '''curl\s+-s\s+-u\s+"\$\{\{\s*steps\.sonar\.outputs\.token\s*\}\}:"''',
+]
