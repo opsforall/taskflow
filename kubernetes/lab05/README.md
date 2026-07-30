@@ -55,14 +55,9 @@ spec:
 
 ```bash
 kubectl apply -f frontend.yaml
-kubectl -n taskflow rollout status deployment/frontend --timeout=180s
 ```
 
 Reference : [solution.yaml](solution.yaml)
-
-```bash
-kubectl apply -f kubernetes/lab05/solution.yaml
-```
 
 </details>
 
@@ -70,7 +65,7 @@ kubectl apply -f kubernetes/lab05/solution.yaml
 
 ```bash
 kubectl -n taskflow get configmap frontend-config -o jsonpath='{.data.APP_COLOR}{"\n"}'
-kubectl -n taskflow get deployment frontend
+kubectl -n taskflow get deployment 
 ```
 
 `blue` s'affiche, et le Deployment a `2/2` replicas disponibles.
