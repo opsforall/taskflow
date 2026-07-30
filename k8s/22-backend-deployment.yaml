@@ -22,11 +22,12 @@ spec:
           type: RuntimeDefault
       containers:
         - name: backend
-          # Namespace GHCR = propriétaire du dépôt (opsforall), là où la CI publie.
-          # Si le package GHCR est privé, il faut un imagePullSecret (voir README).
+          # Dépôt Docker Hub PUBLIC : tirable sans imagePullSecret, ce qui rend le
+          # déploiement reproductible sur n'importe quel cluster (Killercoda inclus).
           # Tag VERSIONNÉ (jamais :latest) : reproductibilité + traçabilité des CVE.
-          # La CI publie :<sha>, :1.0.0 et :latest.
-          image: ghcr.io/opsforall/taskflow-backend:1.0.0
+          # ⚠️ La CI, elle, publie encore sur ghcr.io/<owner>/taskflow-backend
+          #    (:<sha>, :1.0.0, :latest) — ce tag-ci est poussé à la main.
+          image: modovar/taskflow-backend:1.1.1
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000

@@ -39,6 +39,7 @@ d'environnement `APP_COLOR` qui change la couleur du front à chaque étape de l
 | [backend/](backend/) | Node.js + Express, auth JWT, CRUD tâches, PostgreSQL |
 | [e2e/](e2e/) | Tests d'acceptance Playwright (stack déployée) |
 | [k8s/](k8s/) | Manifests Kubernetes **durcis** (version de référence) |
+| [kubernetes/](kubernetes/) | Atelier guidé lab00 → lab07 (exercice / solution / test) sur Killercoda |
 | [k8s-insecure/](k8s-insecure/) | Mêmes manifests **volontairement vulnérables** (démo) |
 | [demo-insecure/](demo-insecure/) | Code + dépendance volontairement vulnérables (démo SAST/SCA) |
 | [.github/workflows/](.github/workflows/) | `Pipeline DevOps.yml` — lint, tests, qualité, build sur chaque pull request |

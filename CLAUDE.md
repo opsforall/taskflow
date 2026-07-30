@@ -83,6 +83,7 @@ component directory.
 | `backend/` | Express API: JWT auth, task CRUD, PostgreSQL |
 | `e2e/` | Playwright acceptance tests, run against the deployed stack |
 | `k8s/` | Hardened Kubernetes manifests — the reference version |
+| `kubernetes/` | Guided Killercoda workshop, `lab00/`…`lab07/` — one object per lab, exercise/solution/test. Deliberately *un*-hardened (minimal manifests so the object under study stays readable); **not** covered by the `iac` scan, which is pinned to `scan-ref: k8s`. Each lab's `solution.yaml` must stay identical to the YAML block in its `README.md`. |
 | `k8s-insecure/` | Same manifests, **deliberately vulnerable** — scan-and-fix demo, excluded from CI |
 | `demo-insecure/` | Deliberately vulnerable code + dependency — SAST/SCA demo, excluded from CI |
 | `.github/workflows/` | The two pipelines — see below |
