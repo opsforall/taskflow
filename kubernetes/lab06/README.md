@@ -28,16 +28,16 @@ spec:
 
 ```bash
 kubectl apply -f frontend-service.yaml
-kubectl -n taskflow port-forward service/frontend 8080:80
+kubectl -n taskflow port-forward --address 0.0.0.0 service/frontend 8080:80
 ```
 
 Reference : [solution.yaml](solution.yaml)
 
-```bash
-kubectl apply -f kubernetes/lab06/solution.yaml
-```
-
 Ouvrez **Access Port 8080** dans Killercoda. Laissez le `port-forward` tourner.
+
+`--address 0.0.0.0` est indispensable : par defaut kubectl n'ecoute que sur `127.0.0.1`, donc le
+proxy de Killercoda, qui vient de l'exterieur, ne trouve personne et renvoie **502 Bad Gateway**.
+Un `curl localhost:8080` depuis le terminal marcherait pourtant, puisqu'il part du meme host.
 
 </details>
 
