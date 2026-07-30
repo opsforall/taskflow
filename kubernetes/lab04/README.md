@@ -71,23 +71,17 @@ spec:
 
 ```bash
 kubectl apply -f backend.yaml
-kubectl -n taskflow rollout status deployment/backend --timeout=180s
 ```
 
 Reference : [solution.yaml](solution.yaml)
-
-```bash
-kubectl apply -f kubernetes/lab04/solution.yaml
-```
-
-Pods en `ImagePullBackOff` : le depot etant public, voir [lab00](../lab00/README.md).
+``
 
 </details>
 
 ## Test
 
 ```bash
-kubectl -n taskflow get deployment backend
+kubectl -n taskflow get deployment 
 kubectl -n taskflow get endpointslices -l kubernetes.io/service-name=backend
 kubectl -n taskflow run api-test --image=curlimages/curl:8.10.1 --rm -i --restart=Never -- curl -fsS http://backend:3000/api/health
 ```

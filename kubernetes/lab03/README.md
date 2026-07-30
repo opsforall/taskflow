@@ -85,22 +85,17 @@ spec:
 
 ```bash
 kubectl apply -f postgres.yaml
-kubectl -n taskflow rollout status statefulset/postgres --timeout=180s
 ```
 
 Reference : [solution.yaml](solution.yaml)
-
-```bash
-kubectl apply -f kubernetes/lab03/solution.yaml
-```
 
 </details>
 
 ## Test
 
 ```bash
-kubectl -n taskflow get pod postgres-0
-kubectl -n taskflow get pvc data-postgres-0
+kubectl -n taskflow get pod 
+kubectl -n taskflow get pvc 
 kubectl -n taskflow exec postgres-0 -- pg_isready -U taskflow -d taskflow
 ```
 
