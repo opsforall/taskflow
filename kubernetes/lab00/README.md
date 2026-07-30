@@ -1,5 +1,9 @@
 # Lab 00 - Preparer le cluster
 
+## Environnement
+
+> **Environnement** : [Kubernetes](https://killercoda.com/playgrounds/scenario/kubernetes)
+
 ## Objectif
 
 Verifier les deux prerequis des labs suivants : une `StorageClass` par defaut (lab03) et l'acces a

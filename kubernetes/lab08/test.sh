@@ -40,10 +40,12 @@ expect() {
   fi
 }
 
-# curl_in_cluster <nom-du-pod> <url> : execute curl depuis un pod ephemere
+# curl_in_cluster <nom-du-pod> <url> : execute curl depuis un pod ephemere.
+# --retry : apres un rollout, le Service met parfois quelques secondes a router
+# vers les nouvelles IP de pods ; sans reessai le test echoue par intermittence.
 curl_in_cluster() {
-  kubectl -n "$NS" run "$1" --image="$CURL_IMAGE" --rm -i --restart=Never \
-    --quiet -- curl -fsS --max-time 10 "$2"
+  kubectl -n "$NS" run "$1" --image="$CURL_IMAGE" --rm -i --restart=Never --quiet \
+    -- curl -fsS --connect-timeout 5 --retry 10 --retry-delay 3 --retry-all-errors "$2"
 }
 
 info "Lab 01 - Namespace"

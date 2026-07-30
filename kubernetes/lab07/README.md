@@ -104,9 +104,12 @@ for COLOR in red teal blue; do
   kubectl -n taskflow rollout restart deployment/frontend
   kubectl -n taskflow rollout status deployment/frontend --timeout=120s
 
+  # --retry : juste apres un rollout, le Service peut mettre quelques secondes a
+  # router vers les nouvelles IP de pods. Sans ca, le test echoue par intermittence.
   SERVED=$(kubectl -n taskflow run color-check-$COLOR \
     --image=curlimages/curl:8.10.1 --rm -i --restart=Never --quiet \
-    -- curl -fsS http://frontend/config.js)
+    -- curl -fsS --connect-timeout 5 --retry 10 --retry-delay 3 --retry-all-errors \
+       http://frontend/config.js)
   echo "$SERVED" | grep -q "\"$COLOR\"" \
     && echo "OK   /config.js sert APP_COLOR=$COLOR" \
     || { echo "KO   attendu $COLOR, obtenu : $SERVED"; exit 1; }
