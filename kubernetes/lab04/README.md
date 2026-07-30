@@ -88,7 +88,7 @@ Pods en `ImagePullBackOff` : le depot etant public, voir [lab00](../lab00/README
 
 ```bash
 kubectl -n taskflow get deployment backend
-kubectl -n taskflow get endpoints backend
+kubectl -n taskflow get endpointslices -l kubernetes.io/service-name=backend
 kubectl -n taskflow run api-test --image=curlimages/curl:8.10.1 --rm -i --restart=Never -- curl -fsS http://backend:3000/api/health
 ```
 

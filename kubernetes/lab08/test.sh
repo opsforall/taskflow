@@ -80,7 +80,8 @@ kubectl -n "$NS" rollout status deployment/backend --timeout=240s
 expect "backend availableReplicas" "2" \
   "$(kubectl -n "$NS" get deploy backend -o jsonpath='{.status.availableReplicas}')"
 check "Service backend possede des endpoints" \
-  kubectl -n "$NS" get endpoints backend -o jsonpath='{.subsets[0].addresses[0].ip}'
+  kubectl -n "$NS" get endpointslices -l kubernetes.io/service-name=backend \
+    -o jsonpath='{.items[0].endpoints[0].addresses[0]}'
 check "GET http://backend:3000/api/health" \
   curl_in_cluster api-health "http://backend:3000/api/health"
 # /api/health/ready interroge la base : ce test valide la chaine backend -> postgres

@@ -47,7 +47,7 @@ Dans un second terminal Killercoda :
 
 ```bash
 curl -fsS http://localhost:8080/ | grep -i taskflow
-kubectl -n taskflow get endpoints frontend
+kubectl -n taskflow get endpointslices -l kubernetes.io/service-name=frontend
 ```
 
 La page HTML sort, et au moins une endpoint est listee.
