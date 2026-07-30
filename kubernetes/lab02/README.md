@@ -9,8 +9,12 @@ Sortir la configuration et les credentials du backend hors du Deployment.
 Dans `configuration.yaml`, creez dans `taskflow` :
 
 1. Une ConfigMap `backend-config` avec `DB_HOST=postgres`, `DB_PORT=5432`, `DB_USER=taskflow`, `DB_NAME=taskflow`, `JWT_EXPIRES_IN=24h` et `CORS_ORIGIN=*`.
-2. Un Secret opaque `postgres-secret` avec `POSTGRES_PASSWORD`.
-3. Un Secret opaque `backend-secret` avec le meme `DB_PASSWORD` et un `JWT_SECRET`.
+2. Un Secret opaque `postgres-secret` avec `POSTGRES_PASSWORD=y2izFik82VEJOLK9j9ZWkD6m`.
+3. Un Secret opaque `backend-secret` avec le **meme** `DB_PASSWORD` et un `JWT_SECRET` de 64
+   caracteres hex (`openssl rand -hex 32` ; la solution en montre un).
+
+Les deux mots de passe doivent etre identiques, sinon le backend ne s'authentifiera jamais aupres
+de la base au lab04.
 
 ## Solution
 
@@ -37,7 +41,7 @@ metadata:
   namespace: taskflow
 type: Opaque
 stringData:
-  POSTGRES_PASSWORD: change-me-in-prod
+  POSTGRES_PASSWORD: y2izFik82VEJOLK9j9ZWkD6m
 ---
 apiVersion: v1
 kind: Secret
@@ -46,8 +50,8 @@ metadata:
   namespace: taskflow
 type: Opaque
 stringData:
-  DB_PASSWORD: change-me-in-prod
-  JWT_SECRET: change-me-generate-a-random-64-char-string
+  DB_PASSWORD: y2izFik82VEJOLK9j9ZWkD6m
+  JWT_SECRET: 6bdf49f6db692406cca72794847c02e166d4ead54bfd4f4b596f5cfcc8e09153
 ```
 
 ```bash
@@ -74,32 +78,22 @@ kubectl -n taskflow create configmap backend-config \
   --from-literal=CORS_ORIGIN='*'
 
 kubectl -n taskflow create secret generic postgres-secret \
-  --from-literal=POSTGRES_PASSWORD='change-me-in-prod'
+  --from-literal=POSTGRES_PASSWORD='y2izFik82VEJOLK9j9ZWkD6m'
 
 kubectl -n taskflow create secret generic backend-secret \
-  --from-literal=DB_PASSWORD='change-me-in-prod' \
-  --from-literal=JWT_SECRET='change-me-generate-a-random-64-char-string'
+  --from-literal=DB_PASSWORD='y2izFik82VEJOLK9j9ZWkD6m' \
+  --from-literal=JWT_SECRET='6bdf49f6db692406cca72794847c02e166d4ead54bfd4f4b596f5cfcc8e09153'
 ```
 
 Quotez `'*'`, sinon le shell l'etend en liste de fichiers.
 
-`create` echoue si l'objet existe deja (contrairement a `apply`). Pour rejouer :
 
-```bash
-kubectl -n taskflow delete configmap backend-config
-```
-
-Pour generer le YAML a partir de la commande, au lieu de creer l'objet :
-
-```bash
-kubectl -n taskflow create configmap backend-config --from-literal=DB_HOST=postgres \
-  --dry-run=client -o yaml
-```
-
-C'est le pont entre les deux approches : imperatif pour aller vite, `--dry-run=client -o yaml`
-pour obtenir un manifeste versionnable dans Git.
 
 </details>
+
+> Un Secret n'est pas chiffre : `stringData` devient du base64 dans `data`, decodable par
+> quiconque (`base64 -d`). Ces valeurs sont des placeholders. En production, jamais dans Git :
+> `kubectl create secret`, SealedSecrets, Vault ou External Secrets Operator.
 
 ## Test
 

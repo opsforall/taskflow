@@ -40,6 +40,22 @@ useDefault = true # on garde les ~200 regles par defaut, on ne fait qu'AJOUTER
 # concernee, uniquement dans .github/workflows/, et uniquement pour ces deux
 # tournures precises. Un vrai `curl -u user:motdepasse` ailleurs (ou meme dans
 # un workflow) declenchera toujours l'alerte.
+# --- Faux positif assume : les Secrets de l'atelier kubernetes/ --------------
+# kubernetes/lab02 enseigne les Secrets Kubernetes, il DOIT donc en contenir.
+# Les valeurs sont generees aleatoirement pour ce support de formation, ne
+# protegent rien et ne sont utilisees que dans un cluster jetable (Killercoda).
+# Elles declenchent "generic-api-key" par leur seule entropie.
+#
+# Portee etroite : seulement generic-api-key, seulement kubernetes/lab02/. Un
+# vrai secret ailleurs dans le depot declenchera toujours l'alerte.
+#
+# ⚠️ Publiees dans Git = publiques et definitives. Ne JAMAIS les reutiliser
+#    ailleurs, et ne jamais elargir cette exception a du code de production.
+[[allowlists]]
+description = "Secrets pedagogiques de l'atelier kubernetes (valeurs jetables)"
+targetRules = ["generic-api-key"]
+paths = ['''kubernetes/lab02/.*''']
+
 [[allowlists]]
 description = "SonarQube jetable de la CI : serveur ephemere sur localhost"
 targetRules = ["curl-auth-user"]

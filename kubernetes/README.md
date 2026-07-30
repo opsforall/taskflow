@@ -15,8 +15,9 @@ Format de chaque lab : **Objectif / Exercice / Solution / Test**. A faire dans l
 | [lab07](lab07/README.md) | ConfigMap et rollout | Le site change de couleur, sans rebuild |
 | [lab08](lab08/README.md) | Tests de bout en bout | Validation du deploiement |
 
-Les labs 01 a 06 ont un `solution.yaml` applicable directement, identique au bloc YAML de leur
-section *Solution*. Faites l'exercice avant de l'ouvrir.
+Les labs 01 a 06 fournissent le manifeste applicable directement (`namespace.yaml` au lab01,
+`solution.yaml` ensuite), identique au bloc YAML de leur section *Solution*. Faites l'exercice
+avant de l'ouvrir.
 
 ## Prerequis
 
@@ -31,10 +32,7 @@ modovar/taskflow-backend:1.1.1
 modovar/taskflow-frontend:1.1.1
 ```
 
-```bash
-git clone https://github.com/opsforall/taskflow.git
-cd taskflow
-```
+Clonez le depot, ou recopiez les manifestes au fil des labs.
 
 ## Deployer d'un coup
 
@@ -42,7 +40,7 @@ Pour remonter la pile sans refaire les exercices. L'ordre compte : le namespace 
 ConfigMaps/Secrets avant les workloads qui les consomment.
 
 ```bash
-kubectl apply -f kubernetes/lab01/solution.yaml
+kubectl apply -f kubernetes/lab01/namespace.yaml
 kubectl apply -f kubernetes/lab02/solution.yaml
 kubectl apply -f kubernetes/lab03/solution.yaml
 kubectl apply -f kubernetes/lab04/solution.yaml
@@ -59,20 +57,11 @@ kubectl delete namespace taskflow
 
 Supprime aussi le PVC `data-postgres-0`, donc les donnees PostgreSQL.
 
-## Rapport avec `k8s/`
+## Pour aller plus loin
 
-| Repertoire | Role |
-| --- | --- |
-| `kubernetes/` | Cet atelier : manifestes minimaux, pour apprendre |
-| [`k8s/`](../k8s/) | Version durcie : securityContext, probes, resources, NetworkPolicy, Ingress |
-
-Les solutions sont volontairement depouillees pour que l'objet etudie reste lisible. Une fois
-l'atelier fini, comparez avec `k8s/` : la difference est exactement le durcissement attendu en
-production.
-
-```bash
-kubectl delete namespace taskflow
-kubectl apply -f k8s/
-```
+Les manifestes de cet atelier sont volontairement depouilles pour que l'objet etudie reste
+lisible. Une version durcie ajouterait : `securityContext` (`runAsNonRoot`,
+`readOnlyRootFilesystem`, `capabilities: drop [ALL]`), des limites de ressources, des probes
+completes, une NetworkPolicy et un Ingress.
 
 > Les Secrets des labs sont pedagogiques. Jamais de vrais mots de passe dans Git.
