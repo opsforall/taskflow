@@ -39,6 +39,28 @@ Ouvrez **Access Port 8080** dans Killercoda. Laissez le `port-forward` tourner.
 proxy de Killercoda, qui vient de l'exterieur, ne trouve personne et renvoie **502 Bad Gateway**.
 Un `curl localhost:8080` depuis le terminal marcherait pourtant, puisqu'il part du meme host.
 
+**Sur un cluster local** (Docker Desktop, minikube, kind), le navigateur est sur la meme machine :
+
+```bash
+kubectl -n taskflow port-forward service/frontend 8080:80
+```
+
+Puis http://localhost:8080
+
+### Se connecter a l'application
+
+Aucun compte n'existe au depart : commencez par **Inscription**.
+
+| Champ | Contrainte | Exemple |
+| --- | --- | --- |
+| Nom | 2 caracteres minimum | `Demo` |
+| Email | format email valide | `demo@taskflow.local` |
+| Mot de passe | **8 caracteres minimum** | `taskflow123` |
+
+L'inscription connecte directement (elle renvoie un JWT, stocke dans le `localStorage` du
+navigateur). Les comptes vivent dans PostgreSQL : ils survivent a un redemarrage des pods, mais
+disparaissent avec le PVC si vous supprimez le namespace.
+
 </details>
 
 ## Test
