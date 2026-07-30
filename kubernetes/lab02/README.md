@@ -60,6 +60,45 @@ Reference : [solution.yaml](solution.yaml)
 kubectl apply -f kubernetes/lab02/solution.yaml
 ```
 
+### Methode imperative
+
+Meme resultat, sans ecrire de YAML :
+
+```bash
+kubectl -n taskflow create configmap backend-config \
+  --from-literal=DB_HOST=postgres \
+  --from-literal=DB_PORT=5432 \
+  --from-literal=DB_USER=taskflow \
+  --from-literal=DB_NAME=taskflow \
+  --from-literal=JWT_EXPIRES_IN=24h \
+  --from-literal=CORS_ORIGIN='*'
+
+kubectl -n taskflow create secret generic postgres-secret \
+  --from-literal=POSTGRES_PASSWORD='change-me-in-prod'
+
+kubectl -n taskflow create secret generic backend-secret \
+  --from-literal=DB_PASSWORD='change-me-in-prod' \
+  --from-literal=JWT_SECRET='change-me-generate-a-random-64-char-string'
+```
+
+Quotez `'*'`, sinon le shell l'etend en liste de fichiers.
+
+`create` echoue si l'objet existe deja (contrairement a `apply`). Pour rejouer :
+
+```bash
+kubectl -n taskflow delete configmap backend-config
+```
+
+Pour generer le YAML a partir de la commande, au lieu de creer l'objet :
+
+```bash
+kubectl -n taskflow create configmap backend-config --from-literal=DB_HOST=postgres \
+  --dry-run=client -o yaml
+```
+
+C'est le pont entre les deux approches : imperatif pour aller vite, `--dry-run=client -o yaml`
+pour obtenir un manifeste versionnable dans Git.
+
 </details>
 
 ## Test
