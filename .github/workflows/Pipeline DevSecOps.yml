@@ -341,13 +341,16 @@ jobs:
       # Gitleaks lit le code ET TOUT L'HISTORIQUE git : un secret supprime dans
       # un commit recent reste lisible dans les commits precedents. Le
       # supprimer ne suffit donc pas - il faut le REVOQUER.
+      # Deux fichiers pilotent les exceptions (voir leurs en-tetes) :
+      #   .gitleaks.toml   allowlist par MOTIF (regex), independante du commit
+      #   .gitleaksignore  allowlist par EMPREINTE (commit + ligne), ponctuelle
       - name: Gitleaks - un secret a-t-il fuite dans git ?
         if: matrix.id == 'secrets'
         id: gitleaks
         run: |
           docker run --rm -v "$PWD:/repo" -w /repo \
             ghcr.io/gitleaks/gitleaks:v8.30.1 \
-            git /repo --redact --verbose
+            git /repo --redact --verbose --config /repo/.gitleaks.toml
 
       # --- QUESTION : les bibliotheques que j'installe ont-elles des failles
       # connues ? Trivy lit package-lock.json et compare chaque version aux

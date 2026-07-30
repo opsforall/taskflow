@@ -87,12 +87,13 @@ jobs:
 
   # --- Test unitaire Jest (backend) / Vitest (frontend) ------------------------
   # Le frontend utilise Vitest, pas Jest : meme facon d'ecrire les tests
+  
   # (describe / it / expect), mais un lanceur different, integre a Vite.
   test-unitaire:
     name: ${{ matrix.tool }} (${{ matrix.component }})
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false
+      fail-fast: false 
       matrix:
         include:
           - component: backend
