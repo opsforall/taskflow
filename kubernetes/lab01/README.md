@@ -36,7 +36,7 @@ kubectl apply -f kubernetes/lab01/solution.yaml
 ## Test
 
 ```bash
-kubectl get namespace taskflow -o jsonpath='{.metadata.labels.app\.kubernetes\.io/name}{"\n"}'
+kubectl get namespace 
 ```
 
 Doit afficher `taskflow`.

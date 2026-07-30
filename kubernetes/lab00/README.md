@@ -11,10 +11,10 @@ Docker Hub (labs 04-05).
 
 ## Exercice
 
-Sur le scenario **Kubernetes Playground** de Killercoda :
 
-1. Le cluster a-t-il une `StorageClass` par defaut ? Sans elle, le PVC du lab03 reste `Pending`.
-2. Le cluster peut-il tirer `modovar/taskflow-backend:1.1.1` ?
+
+Le cluster a-t-il une `StorageClass` par defaut ? Sans elle, le PVC du lab03 reste `Pending`.
+
 
 ## Solution
 
@@ -34,4 +34,6 @@ kubectl -n local-path-storage rollout status deployment/local-path-provisioner -
 kubectl patch storageclass local-path \
   -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
 ```
+
+</details>
 
