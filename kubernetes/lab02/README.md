@@ -85,7 +85,6 @@ kubectl -n taskflow create secret generic backend-secret \
   --from-literal=JWT_SECRET='6bdf49f6db692406cca72794847c02e166d4ead54bfd4f4b596f5cfcc8e09153'
 ```
 
-Quotez `'*'`, sinon le shell l'etend en liste de fichiers.
 
 
 
@@ -98,9 +97,7 @@ Quotez `'*'`, sinon le shell l'etend en liste de fichiers.
 ## Test
 
 ```bash
-kubectl -n taskflow get configmap backend-config
-kubectl -n taskflow get secret postgres-secret backend-secret
-kubectl -n taskflow get configmap backend-config -o jsonpath='{.data.DB_HOST}{"\n"}'
+kubectl -n taskflow get configmap 
+kubectl -n taskflow get secret 
 ```
 
-Les trois commandes reussissent, la derniere affiche `postgres`.
