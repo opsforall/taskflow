@@ -12,7 +12,7 @@ Ecrivez `postgres.yaml` avec :
 2. Un StatefulSet `postgres` a une replique, utilisant `postgres:16.4-alpine`.
 3. Les variables `POSTGRES_USER=taskflow`, `POSTGRES_DB=taskflow`, `PGDATA=/var/lib/postgresql/data/pgdata` et le mot de passe depuis `postgres-secret`.
 4. Un `volumeClaimTemplates` de `1Gi`, `ReadWriteOnce`.
-5. Une readiness probe `exec` sur `pg_isready`, pour que le pod ne soit `Ready` qu'une fois la base ouverte aux connexions.
+5. Une readiness probe `exec` sur `pg_isready`.
 
 ## Solution
 
@@ -88,7 +88,7 @@ kubectl apply -f postgres.yaml
 kubectl -n taskflow rollout status statefulset/postgres --timeout=180s
 ```
 
-Le fichier de reference se trouve dans [solution.yaml](solution.yaml) :
+Reference : [solution.yaml](solution.yaml)
 
 ```bash
 kubectl apply -f kubernetes/lab03/solution.yaml
@@ -104,4 +104,4 @@ kubectl -n taskflow get pvc data-postgres-0
 kubectl -n taskflow exec postgres-0 -- pg_isready -U taskflow -d taskflow
 ```
 
-Le pod doit etre `Running`, le PVC `Bound` et `pg_isready` doit accepter les connexions.
+Pod `Running`, PVC `Bound`, `pg_isready` accepte les connexions.

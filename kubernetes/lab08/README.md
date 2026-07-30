@@ -2,31 +2,31 @@
 
 ## Objectif
 
-Valider automatiquement que toutes les briques du deploiement TaskFlow fonctionnent ensemble.
+Valider que toutes les briques fonctionnent ensemble.
 
 ## Exercice
 
-Avant d'executer les tests, predisez quel test echouera si le Service PostgreSQL n'est pas headless, puis lancez les commandes suivantes.
+Predisez quel test echoue si le Service PostgreSQL n'est pas headless, puis lancez les tests.
 
 ## Solution
 
 <details><summary>Afficher la solution</summary>
 
-Les tests ci-dessous verifient la presence des ressources, la disponibilite des workloads et les contrats de connectivite internes.
+Le Service PostgreSQL doit avoir `clusterIP: None` pour donner au StatefulSet l'identite DNS stable
+qu'il attend. Sinon `pg_isready` sur `postgres-0` et la readiness du backend (`/api/health/ready`,
+qui interroge la base) tombent.
 
 </details>
 
 ## Test
 
-Tout est regroupe dans un script executable, [test.sh](test.sh) :
-
 ```bash
 bash kubernetes/lab08/test.sh
 ```
 
-Il affiche une ligne `OK` / `KO` par assertion et sort en code 1 des qu'une d'entre elles echoue.
+Une ligne `OK` / `KO` par assertion, code de sortie 1 au premier echec.
 
-<details><summary>Ou, lab par lab, a la main</summary>
+<details><summary>Ou a la main</summary>
 
 ```bash
 # Ressources attendues
@@ -53,5 +53,3 @@ echo "Tous les tests TaskFlow sont passes."
 ```
 
 </details>
-
-Le Service PostgreSQL doit etre headless pour fournir l'identite DNS stable attendue par le StatefulSet. Les commandes se terminent sans erreur lorsque le deploiement est complet.

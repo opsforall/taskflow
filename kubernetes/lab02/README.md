@@ -2,7 +2,7 @@
 
 ## Objectif
 
-Fournir au backend sa configuration non sensible et ses credentials sans les inscrire dans le Deployment.
+Sortir la configuration et les credentials du backend hors du Deployment.
 
 ## Exercice
 
@@ -54,7 +54,7 @@ stringData:
 kubectl apply -f configuration.yaml
 ```
 
-Le fichier de reference se trouve dans [solution.yaml](solution.yaml) :
+Reference : [solution.yaml](solution.yaml)
 
 ```bash
 kubectl apply -f kubernetes/lab02/solution.yaml
@@ -70,4 +70,4 @@ kubectl -n taskflow get secret postgres-secret backend-secret
 kubectl -n taskflow get configmap backend-config -o jsonpath='{.data.DB_HOST}{"\n"}'
 ```
 
-Les trois commandes doivent reussir; la derniere affiche `postgres`.
+Les trois commandes reussissent, la derniere affiche `postgres`.

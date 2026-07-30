@@ -2,7 +2,7 @@
 
 ## Objectif
 
-Exposer le frontend a l'interieur du cluster, puis l'ouvrir depuis le navigateur Killercoda.
+Exposer le frontend dans le cluster et l'ouvrir dans le navigateur.
 
 ## Exercice
 
@@ -31,13 +31,13 @@ kubectl apply -f frontend-service.yaml
 kubectl -n taskflow port-forward service/frontend 8080:80
 ```
 
-Le fichier de reference se trouve dans [solution.yaml](solution.yaml) :
+Reference : [solution.yaml](solution.yaml)
 
 ```bash
 kubectl apply -f kubernetes/lab06/solution.yaml
 ```
 
-Ouvrez le bouton **Access Port 8080** de Killercoda. Gardez le `port-forward` actif dans son terminal.
+Ouvrez **Access Port 8080** dans Killercoda. Laissez le `port-forward` tourner.
 
 </details>
 
@@ -50,8 +50,7 @@ curl -fsS http://localhost:8080/ | grep -i taskflow
 kubectl -n taskflow get endpoints frontend
 ```
 
-La page HTML et au moins une endpoint frontend doivent etre presentes.
+La page HTML sort, et au moins une endpoint est listee.
 
-Le site s'affiche en **bleu**, la valeur posee dans la ConfigMap au lab05. Gardez cet onglet et le
-`port-forward` ouverts : le [lab07](../lab07/README.md) va changer cette couleur sans reconstruire
-l'image.
+Le site est **bleu** (valeur posee au lab05). Gardez l'onglet et le `port-forward` ouverts pour le
+[lab07](../lab07/README.md).

@@ -2,7 +2,7 @@
 
 ## Objectif
 
-Deployer deux replicas de l'API TaskFlow et les rendre joignables par le DNS `backend`.
+Deployer deux replicas de l'API, joignables via le DNS `backend`.
 
 ## Exercice
 
@@ -74,14 +74,13 @@ kubectl apply -f backend.yaml
 kubectl -n taskflow rollout status deployment/backend --timeout=180s
 ```
 
-Le fichier de reference se trouve dans [solution.yaml](solution.yaml) :
+Reference : [solution.yaml](solution.yaml)
 
 ```bash
 kubectl apply -f kubernetes/lab04/solution.yaml
 ```
 
-Si les pods restent en `ImagePullBackOff`, le depot etant public il ne s'agit pas d'un probleme de
-droits : voir la section *Acces aux images TaskFlow* du [lab00](../lab00/README.md).
+Pods en `ImagePullBackOff` : le depot etant public, voir [lab00](../lab00/README.md).
 
 </details>
 
@@ -93,4 +92,4 @@ kubectl -n taskflow get endpoints backend
 kubectl -n taskflow run api-test --image=curlimages/curl:8.10.1 --rm -i --restart=Never -- curl -fsS http://backend:3000/api/health
 ```
 
-Le Deployment doit avoir `2/2` replicas disponibles et le test HTTP doit renvoyer un JSON sain.
+`2/2` replicas disponibles, et le test HTTP renvoie un JSON sain.

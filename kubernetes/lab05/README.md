@@ -2,7 +2,7 @@
 
 ## Objectif
 
-Configurer le theme et l'URL interne de l'API au demarrage du frontend, puis deployer deux replicas nginx.
+Configurer le theme et l'URL de l'API au demarrage du frontend, puis deployer deux replicas nginx.
 
 ## Exercice
 
@@ -58,7 +58,7 @@ kubectl apply -f frontend.yaml
 kubectl -n taskflow rollout status deployment/frontend --timeout=180s
 ```
 
-Le fichier de reference se trouve dans [solution.yaml](solution.yaml) :
+Reference : [solution.yaml](solution.yaml)
 
 ```bash
 kubectl apply -f kubernetes/lab05/solution.yaml
@@ -73,4 +73,4 @@ kubectl -n taskflow get configmap frontend-config -o jsonpath='{.data.APP_COLOR}
 kubectl -n taskflow get deployment frontend
 ```
 
-Le theme affiche `blue` et le Deployment a `2/2` replicas disponibles.
+`blue` s'affiche, et le Deployment a `2/2` replicas disponibles.
