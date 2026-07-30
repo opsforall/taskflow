@@ -12,6 +12,10 @@ Ecrivez `namespace.yaml` : un namespace `taskflow` portant le label `app.kuberne
 
 <details><summary>Afficher la solution</summary>
 
+```bash
+vi namespace.yaml 
+```
+
 ```yaml
 apiVersion: v1
 kind: Namespace
@@ -25,11 +29,9 @@ metadata:
 kubectl apply -f namespace.yaml
 ```
 
-Reference : [solution.yaml](solution.yaml)
+Reference : [namespace.yaml](namespace.yaml)
 
-```bash
-kubectl apply -f kubernetes/lab01/solution.yaml
-```
+
 
 </details>
 
