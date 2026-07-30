@@ -72,7 +72,5 @@ curl -fsS http://localhost:8080/ | grep -i taskflow
 kubectl -n taskflow get endpointslices -l kubernetes.io/service-name=frontend
 ```
 
-La page HTML sort, et au moins une endpoint est listee.
 
-Le site est **bleu** (valeur posee au lab05). Gardez l'onglet et le `port-forward` ouverts pour le
-[lab07](../lab07/README.md).
+Le site est **bleu** (valeur posee au lab05). 
